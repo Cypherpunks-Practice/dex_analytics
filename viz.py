@@ -35,7 +35,7 @@ def pie_top_pools(df, others_limit: int = config.PIE_OTHERS_LIMIT):
         labels.append("Others")
         values.append(round(float(rest), 2))
     fig = go.Figure(go.Pie(labels=labels, values=values, hole=0.35, textinfo="percent"))
-    fig.update_layout(title="Топ-50 пулов (доля объёма)", **_LAYOUT)
+    fig.update_layout(**_LAYOUT, showlegend=False)
     return fig
 
 
@@ -50,7 +50,7 @@ def filled_area(df, x_col: str = "time", title: str = ""):
                 stackgroup="one", line=dict(width=0.5, color=_COLORS[i % len(_COLORS)]),
             )
         )
-    fig.update_layout(title=title, **_LAYOUT)
+    fig.update_layout(**_LAYOUT, showlegend=False)
     return fig
 
 
