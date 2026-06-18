@@ -50,7 +50,6 @@ def refresh_all(state):
     # --- Топ-50 пулов ---
     top = queries.get_top_pools(f)
     state.data_top50 = top
-    state.data_top5 = top.head(config.TOP_POOLS_PREVIEW)
     state.fig_pie = viz.pie_top_pools(top)
 
     # --- Анализ рынка: 7 метрик (total) ---
@@ -148,8 +147,9 @@ def remove_pool(state, id):
         refresh_all(state)
 
 
-def toggle_show_all(state):
-    state.show_all_pools = not state.show_all_pools
+def toggle_sidebar(state):
+    """Свернуть/развернуть боковую панель вручную (по стрелке)."""
+    state.sidebar_open = not state.sidebar_open
 
 
 def toggle_metric(state, id):
