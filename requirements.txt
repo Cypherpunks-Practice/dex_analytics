@@ -1,0 +1,5 @@
+taipy>=4.0,<5.0
+pandas>=2.0
+numpy>=1.26
+plotly>=5.0
+
