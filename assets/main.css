@@ -98,7 +98,7 @@
 .add-btn {
     min-width: 36px;
 }
-
+ 
 /* --- Чипсы фильтров (chip = part c render, внутри кнопка-«✕») ---------- */
 .chips {
     display: flex;
@@ -132,6 +132,7 @@
 }
 
 /* --- Контент: занимает всё свободное место и адаптируется ------------- */
+
 .content {
     flex: 1 1 auto;
     min-width: 0;
@@ -139,18 +140,81 @@
 }
 
 .cards {
+    display: grid;
+    grid-template-columns: 1fr 4fr;
+    grid-template-rows: 1fr 1fr;
     gap: 16px;
     align-items: stretch;
 }
 
-.card {
+.top_card {
     background: #ffffff;
-    border: 1px solid #e2e8f0;
+    height: 100%;
+    aspect-ratio: 1 / 1;
+    grid-column: 1;
+    grid-row: 1;
+    border: 2px solid #000000;
     border-radius: 10px;
     padding: 12px 16px;
-    margin-bottom: 16px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
+    position: relative;
+    overflow: hidden;
 }
+
+.main_card {
+    background: #ffffff; 
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    border: 2px solid #000000;
+    border-radius: 10px;
+    padding: 0;
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
+    box-sizing: border-box;
+    position: relative;
+}
+
+.bottom_card {
+    background: #ffffff; 
+    height: 100%;
+    aspect-ratio: 1 / 1;
+    grid-column: 1;
+    grid-row: 2; 
+    border: 2px solid #000000;
+    border-radius: 10px;
+    padding: 12px 16px;
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
+    position: relative;
+    overflow: hidden;
+}
+
+.click-layer {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+    outline: none;
+    cursor: pointer;
+    
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10;
+}
+
+.main_card .click-layer {
+    display: none;
+}
+.main_card .chart {
+    width: 100%;
+    height: 100%;
+}
+
 
 /* --- Строки метрик анализа рынка -------------------------------------- */
 .metric-row {
@@ -168,6 +232,7 @@
     cursor: pointer;
     font-size: 0.95rem;
     color: #0f172a;
+    
 }
 
 .metric-btn button:hover {

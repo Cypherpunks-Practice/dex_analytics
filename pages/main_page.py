@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import io
 import pandas as pd
 import plotly.graph_objects as go
 from taipy.gui import builder as tgb
@@ -66,6 +67,7 @@ fig_daily = go.Figure()
 fig_metric_ts = go.Figure()
 fig_metric_pair = go.Figure()
 
+
 # Списки значений для селекторов/тогглов (подписи)
 time_lov = list(config.TIME_RANGES.values())
 ref_lov = list(config.TREND_REFERENCES.values())
@@ -75,6 +77,9 @@ group_lov = list(config.TREND_GROUP_BY.values())
 # Максимум чипсов-слотов, отрисовываемых для каждого фильтра.
 MAX_CHIPS = 15
 
+card1_class = "top_card"
+card2_class = "main_card"
+card3_class = "bottom_card"   
 
 # ---------------------------------------------------------------------------
 # Хелперы для выражений шаблона
@@ -91,6 +96,33 @@ def chip_label(lst, i: int) -> str:
     if i < len(lst):
         return f"{short_addr(lst[i])}  ✕"
     return ""
+
+def card_1_pressed(state):
+    if(state.card1_class != "main_card"):
+        buf = state.card1_class
+        state.card1_class = "main_card"
+        if(state.card2_class == "main_card"):
+            state.card2_class = buf
+        else:
+            state.card3_class = buf
+
+def card_2_pressed(state):
+    if(state.card2_class != "main_card"):
+        buf = state.card2_class
+        state.card2_class = "main_card"
+        if(state.card1_class == "main_card"):
+            state.card1_class = buf
+        else:
+            state.card3_class = buf
+
+def card_3_pressed(state):
+    if(state.card3_class != "main_card"):
+        buf = state.card3_class
+        state.card3_class = "main_card"
+        if(state.card2_class == "main_card"):
+            state.card2_class = buf
+        else:
+            state.card1_class = buf
 
 
 # ---------------------------------------------------------------------------
@@ -157,19 +189,22 @@ with tgb.Page() as page:
             tgb.button("⟳ Обновить", on_action=on_change_refresh, class_name="refresh-btn")
 
         # ========================= Основной контент =========================
-        with tgb.part(class_name="content"):
+        with tgb.part(class_name="content"): 
 
             # --------------------------- Топ-50 ---------------------------
             with tgb.part(id="sec-top"):
                 tgb.text("## Топ-50 пулов", mode="md")
-                with tgb.layout("1fr 1fr", class_name="cards"):
-                    with tgb.part(class_name="card"):
-                        tgb.chart(figure="{fig_pie}")
-                    with tgb.part(class_name="card"):
-                        tgb.chart(figure="{fig_area1}")
-
-                with tgb.part(class_name="card"):
-                    tgb.table(data="{data_top50}", page_size=10)
+                with tgb.layout("1fr 2fr", class_name="cards"):
+                    with tgb.part(class_name="{card1_class}"):
+                        tgb.button(label="", class_name="click-layer", on_action="card_1_pressed")
+                        tgb.chart(figure="{fig_pie}", class_name="chart", style={"width": "100%", "height": "100%"})
+                    with tgb.part(class_name="{card2_class}"):
+                        tgb.button(label="", class_name="click-layer", on_action="card_2_pressed")
+                        tgb.chart(figure="{fig_area1}", class_name="chart", style={"width": "100%", "height": "100%"})
+                    with tgb.part(class_name="{card3_class}"):
+                        tgb.button(label="", class_name="click-layer", on_action="card_3_pressed")
+                        tgb.table(data="{data_top50}", page_size=10)
+                    
 
             # ----------------------- Анализ рынка -----------------------
             with tgb.part(id="sec-market"):
