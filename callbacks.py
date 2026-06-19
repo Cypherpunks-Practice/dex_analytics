@@ -50,7 +50,7 @@ def refresh_all(state):
     # --- Топ-50 пулов ---
     top = queries.get_top_pools(f)
     state.data_top50 = top
-    state.fig_pie = viz.pie_top_pools(top)
+    state.fig_pie = viz.pie_top_pools(top, int(state.pie_parts))
 
     # --- Анализ рынка: 7 метрик (total) ---
     pair = (state.market_pair or "").strip() or None
@@ -60,9 +60,13 @@ def refresh_all(state):
     # Раскрытый график метрики (если строка развёрнута).
     _refresh_expanded_metric(state, metrics)
 
-    # --- Filled area 1 (по пулам) — общий для секций Топ-50 и Тренд ---
+    # --- Filled area 1 (по пулам), секция Топ-50 ---
+    # Тянем весь набор пулов в state, чтобы ползунок мог пересобирать график
+    # без повторного запроса к данным (см. rebuild_area1).
+    state.data_area1 = queries.get_area_by_pool(f, tmetric)
     state.fig_area1 = viz.filled_area(
-        queries.get_area_by_pool(f, tmetric), title="Перетекание средств между пулами"
+        state.data_area1, int(state.area1_parts),
+        title="Перетекание средств между пулами",
     )
 
     # --- Анализ тренда ---
@@ -111,6 +115,25 @@ def on_init(state):
 def on_change_refresh(state, var_name=None, value=None):
     """Универсальный колбэк фильтров: данные уже записаны в state биндингом."""
     refresh_all(state)
+
+
+def rebuild_pie(state, var_name=None, value=None):
+    """Ползунок круговой диаграммы: пересобрать её под новое число секторов.
+
+    Данные не перезапрашиваем — режем уже загруженный state.data_top50.
+    """
+    state.fig_pie = viz.pie_top_pools(state.data_top50, int(state.pie_parts))
+
+
+def rebuild_area1(state, var_name=None, value=None):
+    """Ползунок filled area: пересобрать график под новое число серий.
+
+    Данные не перезапрашиваем — режем уже загруженный state.data_area1.
+    """
+    state.fig_area1 = viz.filled_area(
+        state.data_area1, int(state.area1_parts),
+        title="Перетекание средств между пулами",
+    )
 
 
 def add_shark(state):

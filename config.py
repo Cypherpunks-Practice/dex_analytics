@@ -63,3 +63,12 @@ PIE_OTHERS_LIMIT = 12         # пулов в pie до объединения о
 AREA_POOLS_LIMIT = 6          # серий-пулов в filled area 1
 AREA_SHARKS_LIMIT = 6         # серий-акул в filled area 2
 HEATMAP_POOLS_LIMIT = 12      # пулов по оси Y хитмапов
+
+# --- Ползунки «на сколько частей делить» графики секции Топ-50 --------------
+# Значение ползунка = число частей графика. PARTS_MAX (== числу пулов) означает
+# «показать все пулы по отдельности»; меньшее значение x → (x-1) крупнейших
+# пулов отдельно + объединённый сектор/серия «Others» (всего x частей).
+PARTS_MIN = 2
+PARTS_MAX = TOP_POOLS_LIMIT                 # 50 — все пулы по отдельности
+PIE_PARTS_DEFAULT = PIE_OTHERS_LIMIT + 1    # 13: 12 пулов + «Others»
+AREA_PARTS_DEFAULT = AREA_POOLS_LIMIT + 1   # 7: 6 пулов + «Others»
