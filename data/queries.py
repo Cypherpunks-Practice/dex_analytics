@@ -8,7 +8,7 @@ ClickHouse тело каждой функции заменится на реал
 
 Соглашение о `filters` — dict:
     {
-        "players": list[str],   # адреса акул/китов (обязательно)
+        "players": list[str],   # адреса акул/китов; пусто = весь список
         "pools":   list[str],   # адреса пулов; пусто = весь рынок
         "time_range": str,      # ключ из config.TIME_RANGES
     }
@@ -62,8 +62,13 @@ def get_heatmap_time_pools(filters: dict, metric: str):
     return stubs.heatmap_time_pools(metric, filters.get("time_range", "today"), config.HEATMAP_POOLS_LIMIT)
 
 
-def get_area_by_pool(filters: dict, metric: str, limit: int = config.AREA_POOLS_LIMIT):
-    """Filled area 1: время × объём, серии=пулы (ограничено limit)."""
+def get_area_by_pool(filters: dict, metric: str, limit: int = config.TOP_POOLS_LIMIT):
+    """Filled area 1: время × объём, серии=пулы.
+
+    Возвращает весь набор пулов (по умолчанию TOP_POOLS_LIMIT). Прореживание
+    до нужного числа серий и сворачивание остатка в «Others» делает
+    viz.filled_area по значению ползунка — данные при этом не перезапрашиваются.
+    """
     return stubs.area_by_pool(metric, filters.get("time_range", "today"), limit)
 
 

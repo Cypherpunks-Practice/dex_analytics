@@ -48,6 +48,11 @@ def _pool_label(i: int) -> str:
     return f"{_pair_name(i)} ({_pool_addr(i)[:6]}…{_pool_addr(i)[-4:]})"
 
 
+def _pool_label_full_addr(i: int) -> str:
+    """Подпись пула: пара + полный адрес."""
+    return f"{_pair_name(i)} ({_pool_addr(i)})"
+
+
 # --- Топ пулов --------------------------------------------------------------
 def top_pools(limit: int) -> pd.DataFrame:
     """Топ пулов по объёму (случайный, отсортированный по убыванию)."""
@@ -55,7 +60,7 @@ def top_pools(limit: int) -> pd.DataFrame:
     vols = np.sort(np.random.gamma(2.0, 50_000, n))[::-1]
     return pd.DataFrame(
         {
-            "pool": [_pool_label(i) for i in range(n)],
+            "pool": [_pool_label_full_addr(i) for i in range(n)],
             "volume": np.round(vols, 2),
         }
     )
@@ -106,8 +111,15 @@ def metric_timeseries(metric: str, time_range: str, pair: str | None) -> pd.Data
 
 
 # --- Анализ тренда: diff пулов ----------------------------------------------
-def _pool_diff(n: int) -> pd.DataFrame:
+def _pool_diff(n: int, full_addr = True) -> pd.DataFrame:
     idx = sorted(random.sample(range(100), n))
+    if full_addr:
+        return pd.DataFrame(
+            {
+                "pool": [_pool_label_full_addr(i) for i in idx],
+                "volume": np.round(np.random.gamma(2.0, 40_000, n), 2),
+            }
+        )
     return pd.DataFrame(
         {
             "pool": [_pool_label(i) for i in idx],
@@ -150,6 +162,10 @@ def _shark_addr(i: int) -> str:
 def _shark_label(i: int) -> str:
     a = _shark_addr(i)
     return f"{a[:6]}…{a[-4:]}"
+
+
+def _shark_label_full_addr(i: int) -> str:
+    return f"{_shark_addr(i)}"
 
 
 # --- Хитмапы ----------------------------------------------------------------

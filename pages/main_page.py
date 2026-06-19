@@ -20,6 +20,8 @@ from callbacks import (
     add_pool,
     add_shark,
     on_change_refresh,
+    rebuild_area1,
+    rebuild_pie,
     remove_pool,
     remove_shark,
     toggle_metric,
@@ -37,6 +39,10 @@ shark_input = ""
 pools: list[str] = []
 pool_input = ""
 
+# Топ-50: на сколько частей делить графики (2..50; 50 = все пулы по отдельности).
+pie_parts = config.PIE_PARTS_DEFAULT
+area1_parts = config.AREA_PARTS_DEFAULT
+
 # Анализ рынка
 market_pair = ""
 expanded_metric: str | None = None
@@ -53,6 +59,7 @@ sidebar_open = True
 # Данные таблиц (пустые до on_init)
 _empty_df = pd.DataFrame()
 data_top50 = _empty_df
+data_area1 = _empty_df          # широкий df filled area 1 — режется ползунком
 data_pools_left = _empty_df
 data_pools_entered = _empty_df
 
@@ -164,8 +171,28 @@ with tgb.Page() as page:
                 tgb.text("## Топ-50 пулов", mode="md")
                 with tgb.layout("1fr 1fr", class_name="cards"):
                     with tgb.part(class_name="card"):
+                        with tgb.part(class_name="parts-ctl"):
+                            tgb.text(
+                                "Секторов на диаграмме: **{pie_parts}** _(50 = все пулы)_",
+                                mode="md", class_name="hint",
+                            )
+                            tgb.slider(
+                                value="{pie_parts}",
+                                min=config.PARTS_MIN, max=config.PARTS_MAX,
+                                step=1, continuous=False, on_change=rebuild_pie,
+                            )
                         tgb.chart(figure="{fig_pie}")
                     with tgb.part(class_name="card"):
+                        with tgb.part(class_name="parts-ctl"):
+                            tgb.text(
+                                "Серий на графике: **{area1_parts}** _(50 = все пулы)_",
+                                mode="md", class_name="hint",
+                            )
+                            tgb.slider(
+                                value="{area1_parts}",
+                                min=config.PARTS_MIN, max=config.PARTS_MAX,
+                                step=1, continuous=False, on_change=rebuild_area1,
+                            )
                         tgb.chart(figure="{fig_area1}")
 
                 with tgb.part(class_name="card"):
