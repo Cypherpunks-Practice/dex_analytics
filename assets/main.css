@@ -9,8 +9,8 @@
 
 /* Свёрнутая панель — узкая вертикальная полоска со стрелкой. */
 .rail {
-    flex: 0 0 44px;
-    width: 44px;
+    flex: 0 0 70px;
+    width: 70px;
     box-sizing: border-box;
     background: #f5f7fa;
     border-right: 1px solid #e2e8f0;
@@ -47,7 +47,7 @@
 .rail-btn button,
 .collapse-btn button {
     background: #2563eb;
-    color: #fff;
+    color: #fff ;
     border: none;
     border-radius: 6px;
     width: 30px;
@@ -60,7 +60,7 @@
 
 .rail-btn button:hover,
 .collapse-btn button:hover {
-    background: #1d4ed8;
+    background: #1d4ed8 ;
 }
 
 .sidebar h1 {
@@ -123,7 +123,7 @@
 }
 
 .chip button:hover {
-    background: #c7d2fe;
+    background: #c7d2fe ;
 }
 
 .refresh-btn {

@@ -196,7 +196,7 @@ with tgb.Page() as page:
                         tgb.chart(figure="{fig_area1}")
 
                 with tgb.part(class_name="card"):
-                    tgb.table(data="{data_top50}", page_size=10)
+                    tgb.table(data="{data_top50}", page_size=10, page_size_options=[10, 25, 50])
 
             # ----------------------- Анализ рынка -----------------------
             with tgb.part(id="sec-market"):
