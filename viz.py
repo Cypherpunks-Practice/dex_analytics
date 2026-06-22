@@ -18,10 +18,12 @@ _COLORS = [
     "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac",
 ]
 _LAYOUT = dict(
-    margin=dict(l=40, r=20, t=30, b=40),
+    margin=dict(l=40, r=20, t=95, b=40), 
     template="plotly_white",
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
-    height=320,
+    title_y=0.96,                        
+    title_yanchor="top",
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),  
+    height=370,                           
 )
 
 
