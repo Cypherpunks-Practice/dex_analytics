@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import io
 import pandas as pd
 import plotly.graph_objects as go
 from taipy.gui import builder as tgb
@@ -21,6 +20,8 @@ from callbacks import (
     add_pool,
     add_shark,
     on_change_refresh,
+    rebuild_area1,
+    rebuild_pie,
     remove_pool,
     remove_shark,
     toggle_metric,
@@ -38,6 +39,10 @@ shark_input = ""
 pools: list[str] = []
 pool_input = ""
 
+# Топ-50: на сколько частей делить графики (2..50; 50 = все пулы по отдельности).
+pie_parts = config.PIE_PARTS_DEFAULT
+area1_parts = config.AREA_PARTS_DEFAULT
+
 # Анализ рынка
 market_pair = ""
 expanded_metric: str | None = None
@@ -54,35 +59,19 @@ sidebar_open = True
 # Данные таблиц (пустые до on_init)
 _empty_df = pd.DataFrame()
 data_top50 = _empty_df
+data_area1 = _empty_df          # широкий df filled area 1 — режется ползунком
 data_pools_left = _empty_df
 data_pools_entered = _empty_df
 
 # Фигуры (пустые до on_init)
 fig_pie = go.Figure()
-fig_pie.update_layout(
-    autosize=True,
-    margin=dict(l=0, r=0, t=0, b=0),
-    xaxis=dict(showgrid=True, zeroline=False),
-    yaxis=dict(showgrid=True, zeroline=False),
-    height=None,
-    width=None,
-)
 fig_area1 = go.Figure()
-fig_area1.update_layout(
-    autosize=True,
-    margin=dict(l=0, r=0, t=0, b=0),
-    xaxis=dict(showgrid=True, zeroline=False),
-    yaxis=dict(showgrid=True, zeroline=False),
-    height=None,
-    width=None,
-)
 fig_area2 = go.Figure()
 fig_heatmap1 = go.Figure()
 fig_heatmap2 = go.Figure()
 fig_daily = go.Figure()
 fig_metric_ts = go.Figure()
 fig_metric_pair = go.Figure()
-
 
 # Списки значений для селекторов/тогглов (подписи)
 time_lov = list(config.TIME_RANGES.values())
@@ -112,6 +101,7 @@ def chip_label(lst, i: int) -> str:
     if i < len(lst):
         return f"{short_addr(lst[i])}  ✕"
     return ""
+
 
 def card_1_pressed(state):
     if(state.card1_class != "main_card"):
@@ -205,7 +195,7 @@ with tgb.Page() as page:
             tgb.button("⟳ Обновить", on_action=on_change_refresh, class_name="refresh-btn")
 
         # ========================= Основной контент =========================
-        with tgb.part(class_name="content"): 
+        with tgb.part(class_name="content"):
 
             # --------------------------- Топ-50 ---------------------------
             with tgb.part(id="sec-top"):
@@ -213,14 +203,33 @@ with tgb.Page() as page:
                 with tgb.layout("1fr 2fr", class_name="cards"):
                     with tgb.part(class_name="{card1_class}"):
                         tgb.button(label="", class_name="click-layer", on_action="card_1_pressed")
+                        with tgb.part(class_name="parts-ctl"):
+                            tgb.text(
+                                "Секторов на диаграмме: **{pie_parts}** _(50 = все пулы)_",
+                                mode="md", class_name="hint",
+                            )
+                            tgb.slider(
+                                value="{pie_parts}",
+                                min=config.PARTS_MIN, max=config.PARTS_MAX,
+                                step=1, continuous=False, on_change=rebuild_pie,
+                            )
                         tgb.chart(figure="{fig_pie}", class_name="chart", style={"width": "100%", "height": "100%"})
                     with tgb.part(class_name="{card2_class}"):
                         tgb.button(label="", class_name="click-layer", on_action="card_2_pressed")
+                        with tgb.part(class_name="parts-ctl"):
+                            tgb.text(
+                                "Серий на графике: **{area1_parts}** _(50 = все пулы)_",
+                                mode="md", class_name="hint",
+                            )
+                            tgb.slider(
+                                value="{area1_parts}",
+                                min=config.PARTS_MIN, max=config.PARTS_MAX,
+                                step=1, continuous=False, on_change=rebuild_area1,
+                            )
                         tgb.chart(figure="{fig_area1}", class_name="chart", style={"width": "100%", "height": "100%"})
                     with tgb.part(class_name="{card3_class}"):
                         tgb.button(label="", class_name="click-layer", on_action="card_3_pressed")
-                        tgb.table(data="{data_top50}", page_size=10)
-                    
+                        tgb.table(data="{data_top50}", page_size=10, page_size_options=[10, 25, 50])
 
             # ----------------------- Анализ рынка -----------------------
             with tgb.part(id="sec-market"):
@@ -277,5 +286,3 @@ with tgb.Page() as page:
                         tgb.chart(figure="{fig_heatmap2}")
                 with tgb.part(class_name="card"):
                     tgb.chart(figure="{fig_area2}")
-
-
