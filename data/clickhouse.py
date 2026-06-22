@@ -17,10 +17,19 @@ from __future__ import annotations
 import os
 import threading
 
+try:
+    # Подхватываем переменные из файла `.env` (если он есть) до чтения os.getenv.
+    # Отсутствие python-dotenv не критично — тогда берутся системные переменные.
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
 # Переключатель источника данных. False → реальная БД, True → заглушки.
 USE_STUB = False
 
-# Параметры подключения (можно переопределить через переменные окружения).
+# Параметры подключения (можно переопределить через переменные окружения / .env).
 CLICKHOUSE_HOST = os.getenv("CH_HOST", "localhost")
 CLICKHOUSE_PORT = int(os.getenv("CH_PORT", "8123"))
 CLICKHOUSE_USER = os.getenv("CH_USER", "default")
