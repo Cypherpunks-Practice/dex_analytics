@@ -307,28 +307,43 @@ def _pools_in_window(filters: dict, time_sql: str) -> pd.DataFrame:
     return df if not df.empty else pd.DataFrame({"pool": [], "volume": []})
 
 
+def get_pools_delta(filters: dict, reference: str) -> dict:
+    """Ушедшие и зашедшие пулы за один проход. dict[left|entered -> DataFrame].
+
+    Оба окна (`today` и reference) запрашиваются ОДИН раз, а set-difference в
+    обе стороны считается в Python. Раньше get_pools_left и get_pools_entered
+    вызывались по отдельности и каждая заново тянула оба окна — 4 запроса вместо
+    нужных 2. refresh_all использует этот объединённый вызов.
+    """
+    if clickhouse.USE_STUB:
+        return {"left": stubs.pools_left(reference),
+                "entered": stubs.pools_entered(reference)}
+
+    empty = pd.DataFrame({"pool": [], "volume": []})
+    today = _pools_in_window(filters, _time_where("today"))
+    ref = _pools_in_window(filters, _reference_where(reference))
+    today_pools = set(today["pool"]) if len(today) else set()
+    ref_pools = set(ref["pool"]) if len(ref) else set()
+
+    left = (ref[~ref["pool"].isin(today_pools)].reset_index(drop=True)
+            if len(ref) else empty)
+    entered = (today[~today["pool"].isin(ref_pools)].reset_index(drop=True)
+               if len(today) else empty)
+    return {"left": left, "entered": entered}
+
+
 def get_pools_left(filters: dict, reference: str):
     """Пулы, где играли в reference-окне, но не сегодня. DataFrame[pool, volume]."""
     if clickhouse.USE_STUB:
         return stubs.pools_left(reference)
-    today = _pools_in_window(filters, _time_where("today"))
-    ref = _pools_in_window(filters, _reference_where(reference))
-    today_pools = set(today["pool"]) if len(today) else set()
-    if len(ref):
-        return ref[~ref["pool"].isin(today_pools)].reset_index(drop=True)
-    return pd.DataFrame({"pool": [], "volume": []})
+    return get_pools_delta(filters, reference)["left"]
 
 
 def get_pools_entered(filters: dict, reference: str):
     """Пулы, где появились сегодня, но не было в reference-окне."""
     if clickhouse.USE_STUB:
         return stubs.pools_entered(reference)
-    today = _pools_in_window(filters, _time_where("today"))
-    ref = _pools_in_window(filters, _reference_where(reference))
-    ref_pools = set(ref["pool"]) if len(ref) else set()
-    if len(today):
-        return today[~today["pool"].isin(ref_pools)].reset_index(drop=True)
-    return pd.DataFrame({"pool": [], "volume": []})
+    return get_pools_delta(filters, reference)["entered"]
 
 
 def get_daily_changes(filters: dict, metric: str, group_by: str):

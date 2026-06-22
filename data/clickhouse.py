@@ -36,12 +36,27 @@ CLICKHOUSE_USER = os.getenv("CH_USER", "default")
 CLICKHOUSE_PASSWORD = os.getenv("CH_PASSWORD", "qwerty")
 CLICKHOUSE_DB = os.getenv("CH_DB", "eywa")
 
-# Вспомогательное представление: pool_address -> подпись пары токенов
+# Вспомогательная dim-сущность: pool_address -> подпись пары токенов
 # (`WETH/USDC`). Самого агрегирующего представления mv_dex_analytics_data в БД
 # для аналитики рынка достаточно, но в нём нет читаемых подписей пар — их даёт
-# этот dim-вьюшка. Создаётся идемпотентно при первом подключении.
+# эта сущность. Почти каждый запрос слоя данных джойнит её (`_DIM` в queries.py).
+#
+# Реализована как REFRESHABLE MATERIALIZED VIEW: создаётся один раз, живёт в БД и
+# сама пересчитывается по расписанию (REFRESH EVERY 1 DAY), подхватывая новые пулы
+# и заполненные подписи токенов. Под капотом это обычная таблица MergeTree, поэтому
+# джойн к ней быстрый (десятки мс на запрос). Обычная VIEW так не годится — она
+# пересчитывала бы тело (полный скан swaps + GROUP BY + два JOIN к tokens) на
+# КАЖДЫЙ джойн (~0.5 c на запрос). Обычная (insert-триггерная) MV тоже не подходит:
+# тело агрегирует ВЕСЬ swaps и джойнит tokens — это полный пересчёт, а не инкремент
+# по новым строкам, и существующие данные она бы не «затянула».
+#
+# Создаётся без EMPTY → первичный refresh наполняет её имеющимися данными сразу.
+# Период пересчёта (1 DAY) — единственный тюнинг: пара у пула неизменна, словарь
+# только пополняется новыми пулами, так что суточного цикла с запасом достаточно.
 _DIM_POOL_PAIR_DDL = """
-CREATE VIEW IF NOT EXISTS dim_pool_pair AS
+CREATE MATERIALIZED VIEW IF NOT EXISTS dim_pool_pair
+REFRESH EVERY 1 DAY
+ENGINE = MergeTree ORDER BY pool_address AS
 SELECT
     p.pool_address AS pool_address,
     concat(
@@ -64,8 +79,30 @@ _client = None
 _lock = threading.Lock()
 
 
+def _ensure_dim_pool_pair(c) -> None:
+    """Создать/мигрировать dim_pool_pair как refreshable MV и наполнить данными.
+
+    Идемпотентно: если MV уже есть — не пересоздаём (CREATE ... IF NOT EXISTS).
+    Если от прошлых версий остался объект другого типа (обычная VIEW или
+    MergeTree-таблица) — снимаем его и создаём заново. После первого создания
+    ждём окончания первичного refresh (SYSTEM WAIT VIEW), чтобы запросы сразу
+    видели подписи пар, а не пустой словарь.
+    """
+    rows = c.query(
+        "SELECT engine FROM system.tables "
+        "WHERE database = currentDatabase() AND name = 'dim_pool_pair'"
+    ).result_rows
+    exists_as_mv = bool(rows) and rows[0][0] == "MaterializedView"
+    if rows and not exists_as_mv:
+        c.command("DROP TABLE IF EXISTS dim_pool_pair")
+    c.command(_DIM_POOL_PAIR_DDL)
+    if not exists_as_mv:
+        # Дождаться первичного наполнения (запускается при создании без EMPTY).
+        c.command("SYSTEM WAIT VIEW dim_pool_pair")
+
+
 def _get_client():
-    """Ленивая инициализация клиента + создание dim-представления."""
+    """Ленивая инициализация клиента + создание dim-сущности."""
     global _client
     if _client is None:
         import clickhouse_connect
@@ -77,8 +114,7 @@ def _get_client():
             password=CLICKHOUSE_PASSWORD,
             database=CLICKHOUSE_DB,
         )
-        # Идемпотентно — представление создаётся только если его ещё нет.
-        c.command(_DIM_POOL_PAIR_DDL)
+        _ensure_dim_pool_pair(c)
         _client = c
     return _client
 
