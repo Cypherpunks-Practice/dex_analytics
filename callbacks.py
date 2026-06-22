@@ -73,8 +73,10 @@ def refresh_all(state):
     ref = _REF_KEY.get(state.trend_reference, config.DEFAULT_TREND_REFERENCE)
     group_by = _GROUP_KEY.get(state.trend_group_by, config.DEFAULT_TREND_GROUP_BY)
 
-    state.data_pools_left = queries.get_pools_left(f, ref)
-    state.data_pools_entered = queries.get_pools_entered(f, ref)
+    # Ушедшие/зашедшие пулы — одним вызовом (оба окна запрашиваются один раз).
+    delta = queries.get_pools_delta(f, ref)
+    state.data_pools_left = delta["left"]
+    state.data_pools_entered = delta["entered"]
     state.fig_daily = viz.grouped_lines(
         queries.get_daily_changes(f, tmetric, group_by),
         title=f"Изменение по дням ({state.trend_metric}, {state.trend_group_by.lower()})",
