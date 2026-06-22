@@ -153,24 +153,30 @@
     aspect-ratio: 1 / 1;
     grid-column: 1;
     grid-row: 1;
-    border: 2px solid #000000;
     border-radius: 10px;
-    padding: 12px 16px;
+    padding: 0;
     box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
+    box-sizing: border-box;
     position: relative;
     overflow: hidden;
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
 }
 
 .main_card {
     background: #ffffff; 
     grid-column: 2;
     grid-row: 1 / span 2;
-    border: 2px solid #000000;
     border-radius: 10px;
     padding: 0;
+    /*border: 1px solid hsl(20, 100%, 50%);*/
     box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
     box-sizing: border-box;
     position: relative;
+    overflow: hidden;
+    align-items: center; 
+    justify-content: center; 
 }
 
 .bottom_card {
@@ -179,12 +185,15 @@
     aspect-ratio: 1 / 1;
     grid-column: 1;
     grid-row: 2; 
-    border: 2px solid #000000;
     border-radius: 10px;
-    padding: 12px 16px;
+    padding: 0;
     box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
     position: relative;
     overflow: hidden;
+    box-sizing: border-box;
+    display: flex; 
+    align-items: center; 
+    justify-content: center;
 }
 
 .click-layer {
@@ -210,10 +219,44 @@
 .main_card .click-layer {
     display: none;
 }
-.main_card .chart {
-    width: 100%;
-    height: 100%;
+.chart {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 !important;
+    margin: 0 !important;
+    align-items: center;
+    justify-content: center;
 }
+
+.top_card .chart,
+.bottom_card .chart {
+    height: 200px;
+}
+
+.main_card .chart {
+    height: 450px;
+}
+
+.chart .main-svg {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.chart .layer-below {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.chart,
+.chart .main-svg,
+.chart .js-plotly-plot,
+.chart svg,
+.chart .plotly-graph-div {
+    box-shadow: none !important;
+    filter: none !important;
+}
+
 
 
 /* --- Строки метрик анализа рынка -------------------------------------- */

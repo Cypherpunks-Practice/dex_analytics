@@ -59,7 +59,23 @@ data_pools_entered = _empty_df
 
 # Фигуры (пустые до on_init)
 fig_pie = go.Figure()
+fig_pie.update_layout(
+    autosize=True,
+    margin=dict(l=0, r=0, t=0, b=0),
+    xaxis=dict(showgrid=True, zeroline=False),
+    yaxis=dict(showgrid=True, zeroline=False),
+    height=None,
+    width=None,
+)
 fig_area1 = go.Figure()
+fig_area1.update_layout(
+    autosize=True,
+    margin=dict(l=0, r=0, t=0, b=0),
+    xaxis=dict(showgrid=True, zeroline=False),
+    yaxis=dict(showgrid=True, zeroline=False),
+    height=None,
+    width=None,
+)
 fig_area2 = go.Figure()
 fig_heatmap1 = go.Figure()
 fig_heatmap2 = go.Figure()
@@ -261,3 +277,5 @@ with tgb.Page() as page:
                         tgb.chart(figure="{fig_heatmap2}")
                 with tgb.part(class_name="card"):
                     tgb.chart(figure="{fig_area2}")
+
+
