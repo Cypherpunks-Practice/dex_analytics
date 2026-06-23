@@ -145,11 +145,6 @@ def _reference_where(reference: str, col: str = "mv.minute_bucket") -> str:
             f"AND {col} < toStartOfDay({now}) - INTERVAL {offset - 1} DAY")
 
 
-def _bucket(time_range: str, col: str = "mv.minute_bucket") -> str:
-    """Шаг округления времени: час для под-суточных окон, иначе день."""
-    if time_range in ("last_hour", "today", "yesterday"):
-        return f"toStartOfMinute({col})"
-    return f"toStartOfDay({col})"
 
 
 def _scope(filters: dict, *, time_sql: str | None = None):
@@ -198,6 +193,26 @@ def _pivot_wide(df: pd.DataFrame, idx: str) -> pd.DataFrame:
     wide.columns.name = None
     return wide
 
+def _bucket(time_range: str, col: str = "mv.minute_bucket") -> str:
+    """Шаг округления времени: час для под-суточных окон, иначе день."""
+    if time_range in ("last_hour"):
+        return f"toStartOfMinute({col})"
+    elif time_range in ("today", "yesterday"):
+        return f"toStartOfTenMinutes({col})"
+    elif time_range in ("week"):
+        return f"toStartOfInterval({col}, INTERVAL 12 HOUR)"
+    return f"toStartOfDay({col})"
+
+
+def _hitmap_bucket(time_range: str, col: str = "mv.minute_bucket") -> str:
+    """Шаг округления времени: час для под-суточных окон, иначе день."""
+    if time_range in ("last_hour"):
+        return f"toStartOfFiveMinutes({col})"
+    elif time_range in ("today", "yesterday"):
+        return f"toStartOfHour({col})"
+    elif time_range in ("week"):
+        return f"toStartOfDay({col})"
+    return f"toStartOfWeek({col})"
 
 # --- Кейс 1: Анализ рынка ---------------------------------------------------
 def get_top_pools(filters: dict):
@@ -483,8 +498,8 @@ def get_heatmap_time_pools(filters: dict, metric: str):
     """Хитмап 2: строки=пулы, колонки=время (день), значения=metric."""
     if clickhouse.USE_STUB:
         return stubs.heatmap_time_pools(
-            metric, filters.get("time_range", "today"), config.HEATMAP_TIME_POOLS_LIMIT)
-
+            metric, filters.get("time_range", "today"), config.HEATMAP_POOLS_LIMIT)
+    tc = filters.get("time_range", "today")
     expr = _TREND_EXPR.get(metric, _TREND_EXPR["volume"])
     where, params = _scope(filters)
     sql = f"""
@@ -497,7 +512,7 @@ def get_heatmap_time_pools(filters: dict, metric: str):
             LIMIT {int(config.HEATMAP_TIME_POOLS_LIMIT)}
         )
         SELECT {_POOL_LABEL} AS pool,
-               toStartOfDay(mv.minute_bucket) AS day,
+               {_hitmap_bucket(tc)} AS day,
                round({expr}, 2) AS value
         FROM {_MV}
         {_DIM}
@@ -512,7 +527,10 @@ def get_heatmap_time_pools(filters: dict, metric: str):
                          aggfunc="sum").fillna(0)
     # Колонки — реальные даты; сортируем по дате, затем подписываем «%m-%d».
     mat = mat.reindex(sorted(mat.columns), axis=1)
-    mat.columns = [pd.Timestamp(c).strftime("%m-%d") for c in mat.columns]
+    if tc in ("last_hour", "today", "yesterday"):
+        mat.columns = [pd.Timestamp(c).strftime("%H:%M") for c in mat.columns]
+    else:
+        mat.columns = [pd.Timestamp(c).strftime("%m-%d") for c in mat.columns]
     mat.index.name = None
     mat.columns.name = None
     return mat
