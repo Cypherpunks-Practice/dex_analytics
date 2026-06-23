@@ -17,6 +17,7 @@ from taipy.gui import Gui, get_state_id, invoke_callback
 
 import callbacks
 import config
+from data import clickhouse
 # Импортируем всё пространство имён страницы в __main__: Taipy ищет
 # привязываемые переменные (sharks, data_*, fig_* …), хелперы выражений
 # (chip_label) и колбэки именно в модуле, где создаётся Gui. Поэтому имена
@@ -49,6 +50,10 @@ def _auto_refresh_loop():
 
 
 if __name__ == "__main__":
+    # Разовая сборка dim-таблицы заранее, чтобы её ~0.5 c не падали на первое
+    # обновление пользователя (на заглушках подключение к БД не нужно).
+    if not clickhouse.USE_STUB:
+        clickhouse.ensure_schema()
     threading.Thread(target=_auto_refresh_loop, daemon=True).start()
     gui.run(
         title="ChainBI — DEX Analytics",

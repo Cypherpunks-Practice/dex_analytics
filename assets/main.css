@@ -164,7 +164,10 @@
     position: relative;
     overflow: hidden;
     display: flex; 
+<<<<<<< HEAD
     flex-direction: column;
+=======
+>>>>>>> 531ceea89a42183b9d58ea44afe7cd6e185b029a
     align-items: center; 
     justify-content: center; 
 }
@@ -197,7 +200,10 @@
     overflow: hidden;
     box-sizing: border-box;
     display: flex; 
+<<<<<<< HEAD
     flex-direction: column;
+=======
+>>>>>>> 531ceea89a42183b9d58ea44afe7cd6e185b029a
     align-items: center; 
     justify-content: center;
 }

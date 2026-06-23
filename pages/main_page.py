@@ -200,7 +200,11 @@ with tgb.Page() as page:
             # --------------------------- Топ-50 ---------------------------
             with tgb.part(id="sec-top"):
                 tgb.text("## Топ-50 пулов", mode="md")
+<<<<<<< HEAD
                 with tgb.layout("1fr 2fr", class_name="cards2"):
+=======
+                with tgb.layout("1fr 2fr", class_name="cards_2"):
+>>>>>>> 531ceea89a42183b9d58ea44afe7cd6e185b029a
                     with tgb.part(class_name="{card1_class}"):
                         tgb.button(label="", class_name="click-layer", on_action="card_1_pressed")
                         with tgb.part(class_name="parts-ctl"):
