@@ -220,8 +220,8 @@ with tgb.Page() as page:
 
             # --------------------------- Топ-50 ---------------------------
             with tgb.part(id="sec-top"):
-                tgb.text("## Топ-50 — {top_dimension}", mode="md")
-                with tgb.layout("1fr 2fr", class_name="cards"):
+                tgb.text("## Топ-50 пулов", mode="md")
+                with tgb.layout("1fr 2fr", class_name="cards_2"):
                     with tgb.part(class_name="{card1_class}"):
                         tgb.button(label="", class_name="click-layer", on_action="card_1_pressed")
                         with tgb.part(class_name="parts-ctl"):
@@ -250,7 +250,7 @@ with tgb.Page() as page:
                         tgb.chart(figure="{fig_area1}", class_name="chart", style={"width": "100%", "height": "100%"})
                     with tgb.part(class_name="{card3_class}"):
                         tgb.button(label="", class_name="click-layer", on_action="card_3_pressed")
-                        tgb.table(data="{data_top50}", columns="{top_cols}", rebuild=True, page_size=10, page_size_options=[10, 25, 50])
+                        tgb.table(data="{data_top50}", page_size=10, page_size_options=[10, 25, 50])
 
             # ----------------------- Анализ рынка -----------------------
             with tgb.part(id="sec-market"):
