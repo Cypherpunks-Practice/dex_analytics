@@ -37,12 +37,14 @@ def pie_top_pools(df, parts: int = config.PIE_PARTS_DEFAULT):
     n = len(df)
     if n == 0:
         return go.Figure()
+    # Колонка-подпись — первая не-volume (pool или player в зависимости от разреза).
+    label_col = next((c for c in df.columns if c != "volume"), "entity")
     if parts >= n:
-        labels = list(df["pool"])
+        labels = list(df[label_col])
         values = [round(float(v), 2) for v in df["volume"]]
     else:
         head = df.head(parts - 1)
-        labels = list(head["pool"])
+        labels = list(head[label_col])
         values = [round(float(v), 2) for v in head["volume"]]
         rest = float(df["volume"].iloc[parts - 1:].sum())
         if rest > 0:
