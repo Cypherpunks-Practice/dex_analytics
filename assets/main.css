@@ -139,13 +139,136 @@
 }
 
 .cards {
+    display: grid;
+    grid-template-columns: 1fr 3fr;
+    grid-template-rows: 1fr 1fr;
     gap: 16px;
     align-items: stretch;
+}
+
+.top_card {
+    background: #ffffff;
+    height: 100%;
+    aspect-ratio: 1 / 1;
+    grid-column: 1;
+    grid-row: 1;
+    border-radius: 10px;
+    padding: 0;
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
+    box-sizing: border-box;
+    position: relative;
+    overflow: hidden;
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+}
+
+.main_card {
+    background: #ffffff; 
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    border-radius: 10px;
+    padding: 0;
+    /*border: 1px solid hsl(20, 100%, 50%);*/
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
+    box-sizing: border-box;
+    position: relative;
+    overflow: hidden;
+    align-items: center; 
+    justify-content: center; 
+}
+
+.bottom_card {
+    background: #ffffff; 
+    height: 100%;
+    aspect-ratio: 1 / 1;
+    grid-column: 1;
+    grid-row: 2; 
+    border-radius: 10px;
+    padding: 0;
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
+    position: relative;
+    overflow: hidden;
+    box-sizing: border-box;
+    display: flex; 
+    align-items: center; 
+    justify-content: center;
+}
+
+.click-layer {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+    outline: none;
+    cursor: pointer;
+    
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10;
+}
+
+.main_card .click-layer {
+    display: none;
+}
+.chart {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 !important;
+    margin: 0 !important;
+    align-items: center;
+    justify-content: center;
+}
+
+.top_card .chart,
+.bottom_card .chart {
+    height: 200px;
+}
+
+.main_card .chart {
+    height: 450px;
+}
+
+.chart .main-svg {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.chart .layer-below {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.chart,
+.chart .main-svg,
+.chart .js-plotly-plot,
+.chart svg,
+.chart .plotly-graph-div {
+    box-shadow: none !important;
+    filter: none !important;
+}
+
+.taipy-table,
+.taipy-table-container,
+.table-container,
+.MuiPaper-root {
+    box-shadow: none !important;
+    border: none !important;
 }
 
 /* Ползунок «на сколько частей делить» над графиком в карточке. */
 .parts-ctl {
     margin-bottom: 10px;
+    margin: 0 auto 10px auto;
+    width: fit-content; 
 }
 
 .parts-ctl .hint {
