@@ -100,6 +100,9 @@ dimension_lov = list(config.TOP_DIMENSION.values())
 # Максимум чипсов-слотов, отрисовываемых для каждого фильтра.
 MAX_CHIPS = 15
 
+card1_class = "top_card"
+card2_class = "main_card"
+card3_class = "bottom_card"   
 
 # ---------------------------------------------------------------------------
 # Хелперы для выражений шаблона
@@ -116,6 +119,34 @@ def chip_label(lst, i: int) -> str:
     if i < len(lst):
         return f"{short_addr(lst[i])}  ✕"
     return ""
+
+
+def card_1_pressed(state):
+    if(state.card1_class != "main_card"):
+        buf = state.card1_class
+        state.card1_class = "main_card"
+        if(state.card2_class == "main_card"):
+            state.card2_class = buf
+        else:
+            state.card3_class = buf
+
+def card_2_pressed(state):
+    if(state.card2_class != "main_card"):
+        buf = state.card2_class
+        state.card2_class = "main_card"
+        if(state.card1_class == "main_card"):
+            state.card1_class = buf
+        else:
+            state.card3_class = buf
+
+def card_3_pressed(state):
+    if(state.card3_class != "main_card"):
+        buf = state.card3_class
+        state.card3_class = "main_card"
+        if(state.card2_class == "main_card"):
+            state.card2_class = buf
+        else:
+            state.card1_class = buf
 
 
 # ---------------------------------------------------------------------------
@@ -190,8 +221,9 @@ with tgb.Page() as page:
             # --------------------------- Топ-50 ---------------------------
             with tgb.part(id="sec-top"):
                 tgb.text("## Топ-50 — {top_dimension}", mode="md")
-                with tgb.layout("1fr 1fr", class_name="cards"):
-                    with tgb.part(class_name="card"):
+                with tgb.layout("1fr 2fr", class_name="cards2"):
+                    with tgb.part(class_name="{card1_class}"):
+                        tgb.button(label="", class_name="click-layer", on_action="card_1_pressed")
                         with tgb.part(class_name="parts-ctl"):
                             tgb.text(
                                 "Секторов на диаграмме: **{pie_parts}** _(50 = все по отдельности)_",
@@ -202,8 +234,9 @@ with tgb.Page() as page:
                                 min=config.PARTS_MIN, max=config.PARTS_MAX,
                                 step=1, continuous=False, on_change=rebuild_pie,
                             )
-                        tgb.chart(figure="{fig_pie}")
-                    with tgb.part(class_name="card"):
+                        tgb.chart(figure="{fig_pie}", class_name="chart", style={"width": "100%", "height": "100%"})
+                    with tgb.part(class_name="{card2_class}"):
+                        tgb.button(label="", class_name="click-layer", on_action="card_2_pressed")
                         with tgb.part(class_name="parts-ctl"):
                             tgb.text(
                                 "Серий на графике: **{area1_parts}** _(50 = все по отдельности)_",
@@ -214,11 +247,10 @@ with tgb.Page() as page:
                                 min=config.PARTS_MIN, max=config.PARTS_MAX,
                                 step=1, continuous=False, on_change=rebuild_area1,
                             )
-                        tgb.chart(figure="{fig_area1}")
-
-                with tgb.part(class_name="card"):
-                    tgb.table(data="{data_top50}", columns="{top_cols}", rebuild=True,
-                              page_size=10, page_size_options=[10, 25, 50])
+                        tgb.chart(figure="{fig_area1}", class_name="chart", style={"width": "100%", "height": "100%"})
+                    with tgb.part(class_name="{card3_class}"):
+                        tgb.button(label="", class_name="click-layer", on_action="card_3_pressed")
+                        tgb.table(data="{data_top50}", columns="{top_cols}", rebuild=True, page_size=10, page_size_options=[10, 25, 50])
 
             # ----------------------- Анализ рынка -----------------------
             with tgb.part(id="sec-market"):
