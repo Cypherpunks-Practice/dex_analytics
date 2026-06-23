@@ -143,8 +143,12 @@ def _reference_where(reference: str, col: str = "mv.minute_bucket") -> str:
 
 def _bucket(time_range: str, col: str = "mv.minute_bucket") -> str:
     """Шаг округления времени: час для под-суточных окон, иначе день."""
-    if time_range in ("last_hour", "today", "yesterday"):
+    if time_range in ("last_hour"):
         return f"toStartOfMinute({col})"
+    elif time_range in ("today", "yesterday"):
+        return f"toStartOfTenMinutes({col})"
+    elif time_range in ("week"):
+        return f"toStartOfInterval({col}, INTERVAL 12 HOUR)"
     return f"toStartOfDay({col})"
 
 
