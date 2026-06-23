@@ -93,11 +93,15 @@ _TRD = "LEFT JOIN traders AS tr ON mv.trader_address = tr.contract_address"
 # Подпись пула, уникальная на адрес: «WETH/USDC (0x12ab34cd…)».
 _POOL_LABEL = ("concat(coalesce(d.pair, 'unknown'), ' (', "
                "substring(mv.pool_address, 1, 8), '…)')")
+# То же, но с ПОЛНЫМ адресом без обрезки — для таблицы Топ-50.
+_POOL_LABEL_FULL = "concat(coalesce(d.pair, 'unknown'), ' (', mv.pool_address, ')')"
 # Подпись игрока, уникальная на адрес: «whale (0x1234ab…)». Большинство адресов
 # в traders помечены как «unknown», поэтому к ярлыку добавляем префикс адреса —
 # иначе тысячи игроков схлопнулись бы в одну серию.
 _SHARK_LABEL = ("concat(coalesce(tr.label, 'addr'), ' (', "
                 "substring(mv.trader_address, 1, 8), '…)')")
+# То же, но с ПОЛНЫМ адресом без обрезки — для таблицы Топ-50 игроков.
+_SHARK_LABEL_FULL = "concat(coalesce(tr.label, 'addr'), ' (', mv.trader_address, ')')"
 
 
 # --- Хелперы построения SQL -------------------------------------------------
@@ -202,7 +206,7 @@ def get_top_pools(filters: dict):
         return stubs.top_pools(config.TOP_POOLS_LIMIT)
     where, params = _scope(filters)
     sql = f"""
-        SELECT {_POOL_LABEL} AS pool,
+        SELECT {_POOL_LABEL_FULL} AS pool,
                round(sumMerge(mv.total_volume), 2) AS volume
         FROM {_MV}
         {_DIM}
@@ -215,33 +219,65 @@ def get_top_pools(filters: dict):
     return df if not df.empty else pd.DataFrame({"pool": [], "volume": []})
 
 
+def get_top_players(filters: dict):
+    """Топ-50 игроков по объёму. DataFrame[player, volume], по убыванию.
+
+    Зеркало get_top_pools, но группировка по трейдеру. Подпись — с ПОЛНЫМ адресом.
+    """
+    if clickhouse.USE_STUB:
+        return stubs.top_players(config.TOP_POOLS_LIMIT)
+    where, params = _scope(filters)
+    sql = f"""
+        SELECT {_SHARK_LABEL_FULL} AS player,
+               round(sumMerge(mv.total_volume), 2) AS volume
+        FROM {_MV}
+        {_TRD}
+        WHERE {where}
+        GROUP BY mv.trader_address, tr.label
+        ORDER BY volume DESC
+        LIMIT {int(config.TOP_POOLS_LIMIT)}
+    """
+    df = clickhouse.execute(sql, params)
+    return df if not df.empty else pd.DataFrame({"player": [], "volume": []})
+
+
 def get_market_metrics(filters: dict, pair: str | None = None) -> dict:
-    """7 метрик рынка: total + разбивка по паре. См. config.MARKET_METRICS."""
+    """7 метрик рынка: total + разбивка по паре. См. config.MARKET_METRICS.
+
+    Если задана пара, и итоговые числа (total), и разбивка считаются в её
+    разрезе. Совпадение по паре — регистронезависимое вхождение подстроки
+    (ввод «usdc» подхватывает WETH/USDC, USDC/USDT и т.п.).
+    """
     if clickhouse.USE_STUB:
         return stubs.market_metrics(pair)
 
     where, params = _scope(filters)
-
-    # total — все метрики одним запросом без группировки.
     total_cols = ", ".join(f"{expr} AS {key}" for key, expr in _MARKET_EXPR.items())
-    tdf = clickhouse.execute(f"SELECT {total_cols} FROM {_MV} WHERE {where}", params)
+
+    # Фильтр по паре общий для total и by_pair: джойн к dim + вхождение подстроки.
+    dim_join = "INNER JOIN dim_pool_pair AS d ON mv.pool_address = d.pool_address"
+    if pair:
+        where = f"{where} AND positionCaseInsensitive(d.pair, {{pair:String}}) > 0"
+        params = dict(params)
+        params["pair"] = pair
+
+    # total — все метрики одним запросом без группировки (с парой — в её разрезе).
+    total_join = dim_join if pair else ""
+    tdf = clickhouse.execute(
+        f"SELECT {total_cols} FROM {_MV} {total_join} WHERE {where}", params)
 
     # by_pair — те же метрики с группировкой по паре токенов.
-    pair_where, pair_params = where, dict(params)
-    if pair:
-        pair_where = f"{where} AND d.pair = {{pair:String}}"
-        pair_params["pair"] = pair
     pdf = clickhouse.execute(
         f"""
         SELECT d.pair AS pair, {total_cols}
         FROM {_MV}
-        INNER JOIN dim_pool_pair AS d ON mv.pool_address = d.pool_address
-        WHERE {pair_where}
+        {dim_join}
+        WHERE {where}
         GROUP BY d.pair
         ORDER BY trade_volume DESC
         LIMIT {int(config.MARKET_PAIRS_LIMIT)}
         """,
-        pair_params,
+        params,
     )
 
     result: dict = {}
@@ -275,7 +311,7 @@ def get_metric_timeseries(filters: dict, metric: str, pair: str | None = None):
     join = ""
     if pair:
         join = "INNER JOIN dim_pool_pair AS d ON mv.pool_address = d.pool_address"
-        where = f"{where} AND d.pair = {{pair:String}}"
+        where = f"{where} AND positionCaseInsensitive(d.pair, {{pair:String}}) > 0"
         params = dict(params)
         params["pair"] = pair
 
@@ -292,12 +328,18 @@ def get_metric_timeseries(filters: dict, metric: str, pair: str | None = None):
 
 
 # --- Кейс 2: Анализ тренда --------------------------------------------------
-def _pools_in_window(filters: dict, time_sql: str) -> pd.DataFrame:
-    """Пулы с объёмом за указанное окно. DataFrame[pool, volume]."""
+def _pools_in_window(filters: dict, time_sql: str, metric: str = "volume") -> pd.DataFrame:
+    """Пулы со значением выбранной метрики за окно. DataFrame[pool, volume].
+
+    Имя столбца оставляем `volume` (контракт стабилен) — подмену метрики делает
+    выражение `_TREND_EXPR[metric]`. Презентационную подпись столбца под метрику
+    навешивает слой колбэков.
+    """
+    expr = _TREND_EXPR.get(metric, _TREND_EXPR["volume"])
     where, params = _scope(filters, time_sql=time_sql)
     sql = f"""
         SELECT {_POOL_LABEL} AS pool,
-               round(sumMerge(mv.total_volume), 2) AS volume
+               round({expr}, 2) AS volume
         FROM {_MV}
         {_DIM}
         WHERE {where}
@@ -307,21 +349,24 @@ def _pools_in_window(filters: dict, time_sql: str) -> pd.DataFrame:
     return df if not df.empty else pd.DataFrame({"pool": [], "volume": []})
 
 
-def get_pools_delta(filters: dict, reference: str) -> dict:
+def get_pools_delta(filters: dict, reference: str, metric: str = "volume") -> dict:
     """Ушедшие и зашедшие пулы за один проход. dict[left|entered -> DataFrame].
 
     Оба окна (`today` и reference) запрашиваются ОДИН раз, а set-difference в
     обе стороны считается в Python. Раньше get_pools_left и get_pools_entered
     вызывались по отдельности и каждая заново тянула оба окна — 4 запроса вместо
     нужных 2. refresh_all использует этот объединённый вызов.
+
+    `metric` (volume/bribe/size) задаёт, какое значение показывать в столбце;
+    членство пула в окне от метрики не зависит — set-difference идёт по `pool`.
     """
     if clickhouse.USE_STUB:
-        return {"left": stubs.pools_left(reference),
-                "entered": stubs.pools_entered(reference)}
+        return {"left": stubs.pools_left(reference, metric),
+                "entered": stubs.pools_entered(reference, metric)}
 
     empty = pd.DataFrame({"pool": [], "volume": []})
-    today = _pools_in_window(filters, _time_where("today"))
-    ref = _pools_in_window(filters, _reference_where(reference))
+    today = _pools_in_window(filters, _time_where("today"), metric)
+    ref = _pools_in_window(filters, _reference_where(reference), metric)
     today_pools = set(today["pool"]) if len(today) else set()
     ref_pools = set(ref["pool"]) if len(ref) else set()
 
@@ -332,18 +377,18 @@ def get_pools_delta(filters: dict, reference: str) -> dict:
     return {"left": left, "entered": entered}
 
 
-def get_pools_left(filters: dict, reference: str):
+def get_pools_left(filters: dict, reference: str, metric: str = "volume"):
     """Пулы, где играли в reference-окне, но не сегодня. DataFrame[pool, volume]."""
     if clickhouse.USE_STUB:
-        return stubs.pools_left(reference)
-    return get_pools_delta(filters, reference)["left"]
+        return stubs.pools_left(reference, metric)
+    return get_pools_delta(filters, reference, metric)["left"]
 
 
-def get_pools_entered(filters: dict, reference: str):
+def get_pools_entered(filters: dict, reference: str, metric: str = "volume"):
     """Пулы, где появились сегодня, но не было в reference-окне."""
     if clickhouse.USE_STUB:
-        return stubs.pools_entered(reference)
-    return get_pools_delta(filters, reference)["entered"]
+        return stubs.pools_entered(reference, metric)
+    return get_pools_delta(filters, reference, metric)["entered"]
 
 
 def get_daily_changes(filters: dict, metric: str, group_by: str):
@@ -391,7 +436,7 @@ def get_daily_changes(filters: dict, metric: str, group_by: str):
 def get_heatmap_sharks_pools(filters: dict, metric: str):
     """Хитмап 1: строки=пулы, колонки=акулы, значения=metric."""
     if clickhouse.USE_STUB:
-        return stubs.heatmap_sharks_pools(metric, config.HEATMAP_POOLS_LIMIT)
+        return stubs.heatmap_sharks_pools(metric, config.HEATMAP_SHARKS_POOLS_LIMIT)
 
     expr = _TREND_EXPR.get(metric, _TREND_EXPR["volume"])
     where, params = _scope(filters)
@@ -402,7 +447,7 @@ def get_heatmap_sharks_pools(filters: dict, metric: str):
             WHERE {where}
             GROUP BY pa
             ORDER BY sumMerge(mv.total_volume) DESC
-            LIMIT {int(config.HEATMAP_POOLS_LIMIT)}
+            LIMIT {int(config.HEATMAP_SHARKS_POOLS_LIMIT)}
         ),
         top_sharks AS (
             SELECT mv.trader_address AS ta
@@ -438,7 +483,7 @@ def get_heatmap_time_pools(filters: dict, metric: str):
     """Хитмап 2: строки=пулы, колонки=время (день), значения=metric."""
     if clickhouse.USE_STUB:
         return stubs.heatmap_time_pools(
-            metric, filters.get("time_range", "today"), config.HEATMAP_POOLS_LIMIT)
+            metric, filters.get("time_range", "today"), config.HEATMAP_TIME_POOLS_LIMIT)
 
     expr = _TREND_EXPR.get(metric, _TREND_EXPR["volume"])
     where, params = _scope(filters)
@@ -449,7 +494,7 @@ def get_heatmap_time_pools(filters: dict, metric: str):
             WHERE {where}
             GROUP BY pa
             ORDER BY sumMerge(mv.total_volume) DESC
-            LIMIT {int(config.HEATMAP_POOLS_LIMIT)}
+            LIMIT {int(config.HEATMAP_TIME_POOLS_LIMIT)}
         )
         SELECT {_POOL_LABEL} AS pool,
                toStartOfDay(mv.minute_bucket) AS day,

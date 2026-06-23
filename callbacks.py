@@ -20,6 +20,11 @@ _TIME_KEY = {v: k for k, v in config.TIME_RANGES.items()}
 _REF_KEY = {v: k for k, v in config.TREND_REFERENCES.items()}
 _METRIC_KEY = {v: k for k, v in config.TREND_METRICS.items()}
 _GROUP_KEY = {v: k for k, v in config.TREND_GROUP_BY.items()}
+_DIM_KEY = {v: k for k, v in config.TOP_DIMENSION.items()}
+
+# Заголовок графика filled area секции Топ-50 — по разрезу.
+_AREA1_TITLE = {"pool": "Перетекание средств между пулами",
+                "player": "Объёмы игроков во времени"}
 
 
 def _fmt(value) -> str:
@@ -47,9 +52,24 @@ def refresh_all(state):
     f = get_filters(state)
     tmetric = _METRIC_KEY.get(state.trend_metric, config.DEFAULT_TREND_METRIC)
 
-    # --- Топ-50 пулов ---
-    top = queries.get_top_pools(f)
+    # --- Топ-50: пулы или игроки (по тумблеру top_dimension) ---
+    # Имя колонки сущности держим стабильным ("entity") — иначе Taipy-таблица,
+    # запомнив колонки при первом рендере, покажет пустоту при смене разреза.
+    # Подпись столбца меняем через bindable columns (top_cols) + rebuild=True.
+    dim = _DIM_KEY.get(state.top_dimension, config.DEFAULT_TOP_DIMENSION)
+    if dim == "player":
+        top = queries.get_top_players(f).rename(columns={"player": "entity"})
+        area = queries.get_area_by_shark(f, tmetric)
+        entity_title = "Игрок"
+    else:
+        top = queries.get_top_pools(f).rename(columns={"pool": "entity"})
+        area = queries.get_area_by_pool(f, tmetric)
+        entity_title = "Пул"
     state.data_top50 = top
+    state.top_cols = {
+        "entity": {"index": 0, "title": entity_title},
+        "volume": {"index": 1, "title": "Объём"},
+    }
     state.fig_pie = viz.pie_top_pools(top, int(state.pie_parts))
 
     # --- Анализ рынка: 7 метрик (total) ---
@@ -60,13 +80,13 @@ def refresh_all(state):
     # Раскрытый график метрики (если строка развёрнута).
     _refresh_expanded_metric(state, metrics)
 
-    # --- Filled area 1 (по пулам), секция Топ-50 ---
-    # Тянем весь набор пулов в state, чтобы ползунок мог пересобирать график
-    # без повторного запроса к данным (см. rebuild_area1).
-    state.data_area1 = queries.get_area_by_pool(f, tmetric)
+    # --- Filled area 1 (по пулам/игрокам), секция Топ-50 ---
+    # Тянем весь набор серий в state, чтобы ползунок мог пересобирать график
+    # без повторного запроса к данным (см. rebuild_area1). Данные уже получены
+    # выше в ветке разреза (area).
+    state.data_area1 = area
     state.fig_area1 = viz.filled_area(
-        state.data_area1, int(state.area1_parts),
-        title="Перетекание средств между пулами",
+        state.data_area1, int(state.area1_parts), title=_AREA1_TITLE[dim],
     )
 
     # --- Анализ тренда ---
@@ -74,18 +94,26 @@ def refresh_all(state):
     group_by = _GROUP_KEY.get(state.trend_group_by, config.DEFAULT_TREND_GROUP_BY)
 
     # Ушедшие/зашедшие пулы — одним вызовом (оба окна запрашиваются один раз).
-    delta = queries.get_pools_delta(f, ref)
+    # Значения столбца считаются по выбранной метрике, но ИМЯ колонки в df
+    # остаётся стабильным ("volume") — иначе Taipy-таблица, запомнив колонки при
+    # первом рендере, не найдёт переименованную и покажет пустоту. Подпись же
+    # столбца под метрику навешиваем через bindable-свойство columns (pools_cols).
+    delta = queries.get_pools_delta(f, ref, tmetric)
     state.data_pools_left = delta["left"]
     state.data_pools_entered = delta["entered"]
+    state.pools_cols = {
+        "pool": {"index": 0, "title": "Пул"},
+        "volume": {"index": 1, "title": config.TREND_METRICS[tmetric]},
+    }
     state.fig_daily = viz.grouped_lines(
         queries.get_daily_changes(f, tmetric, group_by),
         title=f"Изменение по дням ({state.trend_metric}, {state.trend_group_by.lower()})",
     )
     state.fig_heatmap1 = viz.heatmap(
-        queries.get_heatmap_sharks_pools(f, tmetric), title="Хитмап: акулы × пулы"
+        queries.get_heatmap_sharks_pools(f, tmetric), title="Хитмап: топ-10 акул × топ-10 пулов"
     )
     state.fig_heatmap2 = viz.heatmap(
-        queries.get_heatmap_time_pools(f, tmetric), title="Хитмап: время × пулы"
+        queries.get_heatmap_time_pools(f, tmetric), title="Хитмап: время × топ-20 пулов"
     )
     state.fig_area2 = viz.filled_area(
         queries.get_area_by_shark(f, tmetric), title="Объёмы акул во времени"
@@ -131,10 +159,11 @@ def rebuild_area1(state, var_name=None, value=None):
     """Ползунок filled area: пересобрать график под новое число серий.
 
     Данные не перезапрашиваем — режем уже загруженный state.data_area1.
+    Заголовок выбираем по текущему разрезу (пулы/игроки).
     """
+    dim = _DIM_KEY.get(state.top_dimension, config.DEFAULT_TOP_DIMENSION)
     state.fig_area1 = viz.filled_area(
-        state.data_area1, int(state.area1_parts),
-        title="Перетекание средств между пулами",
+        state.data_area1, int(state.area1_parts), title=_AREA1_TITLE[dim],
     )
 
 

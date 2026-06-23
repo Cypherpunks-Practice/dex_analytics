@@ -128,12 +128,16 @@ def _pool_diff(n: int, full_addr = True) -> pd.DataFrame:
     )
 
 
-def pools_left(reference: str) -> pd.DataFrame:
-    """Пулы, где игроки были в reference-окне, но не сегодня."""
+def pools_left(reference: str, metric: str = "volume") -> pd.DataFrame:
+    """Пулы, где игроки были в reference-окне, но не сегодня.
+
+    `metric` поддержан для совпадения сигнатуры с реальным запросом; столбец
+    значений в заглушке всегда `volume` (подпись навешивает слой колбэков).
+    """
     return _pool_diff(random.randint(3, 7))
 
 
-def pools_entered(reference: str) -> pd.DataFrame:
+def pools_entered(reference: str, metric: str = "volume") -> pd.DataFrame:
     """Пулы, где игроки появились сегодня, но не было в reference-окне."""
     return _pool_diff(random.randint(3, 7))
 
@@ -166,6 +170,18 @@ def _shark_label(i: int) -> str:
 
 def _shark_label_full_addr(i: int) -> str:
     return f"{_shark_addr(i)}"
+
+
+def top_players(limit: int) -> pd.DataFrame:
+    """Топ игроков по объёму (случайный, по убыванию). Зеркало top_pools."""
+    n = limit
+    vols = np.sort(np.random.gamma(2.0, 50_000, n))[::-1]
+    return pd.DataFrame(
+        {
+            "player": [_shark_label_full_addr(i) for i in range(n)],
+            "volume": np.round(vols, 2),
+        }
+    )
 
 
 # --- Хитмапы ----------------------------------------------------------------

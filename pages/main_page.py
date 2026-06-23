@@ -39,7 +39,15 @@ shark_input = ""
 pools: list[str] = []
 pool_input = ""
 
-# Топ-50: на сколько частей делить графики (2..50; 50 = все пулы по отдельности).
+# Топ-50: разрез (пулы/игроки) + на сколько частей делить графики (2..50).
+top_dimension = config.TOP_DIMENSION[config.DEFAULT_TOP_DIMENSION]
+# Колонки таблицы Топ-50: имя колонки сущности стабильно ("entity"), заголовок
+# меняется под разрез (см. refresh_all). rebuild=True — иначе Taipy не обновит
+# заголовок при переключении пул↔игрок.
+top_cols = {
+    "entity": {"index": 0, "title": "Пул"},
+    "volume": {"index": 1, "title": "Объём"},
+}
 pie_parts = config.PIE_PARTS_DEFAULT
 area1_parts = config.AREA_PARTS_DEFAULT
 
@@ -52,6 +60,15 @@ metric_values: dict[str, str] = {k: "—" for k in config.MARKET_METRICS}
 trend_reference = config.TREND_REFERENCES[config.DEFAULT_TREND_REFERENCE]
 trend_metric = config.TREND_METRICS[config.DEFAULT_TREND_METRIC]
 trend_group_by = config.TREND_GROUP_BY[config.DEFAULT_TREND_GROUP_BY]
+
+# Колонки таблиц «ушли/зашли»: имя колонки данных стабильно ("volume"), а
+# заголовок столбца значений меняется под выбранную метрику (см. refresh_all).
+# Таблицы заданы с rebuild=True — иначе Taipy считает columns статичным и не
+# обновляет заголовок при смене метрики.
+pools_cols = {
+    "pool": {"index": 0, "title": "Пул"},
+    "volume": {"index": 1, "title": config.TREND_METRICS[config.DEFAULT_TREND_METRIC]},
+}
 
 # Боковая панель: True — развёрнута, False — свёрнута в узкую полоску.
 sidebar_open = True
@@ -78,6 +95,7 @@ time_lov = list(config.TIME_RANGES.values())
 ref_lov = list(config.TREND_REFERENCES.values())
 metric_lov = list(config.TREND_METRICS.values())
 group_lov = list(config.TREND_GROUP_BY.values())
+dimension_lov = list(config.TOP_DIMENSION.values())
 
 # Максимум чипсов-слотов, отрисовываемых для каждого фильтра.
 MAX_CHIPS = 15
@@ -124,6 +142,9 @@ with tgb.Page() as page:
             tgb.html("a", "Анализ рынка", href="#sec-market")
             tgb.html("a", "Анализ тренда", href="#sec-trend")
 
+            tgb.text("#### Топ-50: разрез", mode="md")
+            tgb.toggle(value="{top_dimension}", lov=dimension_lov, on_change=on_change_refresh)
+
             tgb.text("#### Временной диапазон", mode="md")
             tgb.selector(
                 value="{time_range}", lov=time_lov, dropdown=True,
@@ -168,12 +189,12 @@ with tgb.Page() as page:
 
             # --------------------------- Топ-50 ---------------------------
             with tgb.part(id="sec-top"):
-                tgb.text("## Топ-50 пулов", mode="md")
+                tgb.text("## Топ-50 — {top_dimension}", mode="md")
                 with tgb.layout("1fr 1fr", class_name="cards"):
                     with tgb.part(class_name="card"):
                         with tgb.part(class_name="parts-ctl"):
                             tgb.text(
-                                "Секторов на диаграмме: **{pie_parts}** _(50 = все пулы)_",
+                                "Секторов на диаграмме: **{pie_parts}** _(50 = все по отдельности)_",
                                 mode="md", class_name="hint",
                             )
                             tgb.slider(
@@ -185,7 +206,7 @@ with tgb.Page() as page:
                     with tgb.part(class_name="card"):
                         with tgb.part(class_name="parts-ctl"):
                             tgb.text(
-                                "Серий на графике: **{area1_parts}** _(50 = все пулы)_",
+                                "Серий на графике: **{area1_parts}** _(50 = все по отдельности)_",
                                 mode="md", class_name="hint",
                             )
                             tgb.slider(
@@ -196,7 +217,8 @@ with tgb.Page() as page:
                         tgb.chart(figure="{fig_area1}")
 
                 with tgb.part(class_name="card"):
-                    tgb.table(data="{data_top50}", page_size=10, page_size_options=[10, 25, 50])
+                    tgb.table(data="{data_top50}", columns="{top_cols}", rebuild=True,
+                              page_size=10, page_size_options=[10, 25, 50])
 
             # ----------------------- Анализ рынка -----------------------
             with tgb.part(id="sec-market"):
@@ -238,11 +260,13 @@ with tgb.Page() as page:
                     with tgb.part(class_name="card"):
                         tgb.text("### Ушли из пулов", mode="md")
                         tgb.text("_были в reference-окне, но не сегодня_", mode="md", class_name="hint")
-                        tgb.table(data="{data_pools_left}", page_size=7)
+                        tgb.table(data="{data_pools_left}", columns="{pools_cols}",
+                                  rebuild=True, page_size=7)
                     with tgb.part(class_name="card"):
                         tgb.text("### Зашли в пулы", mode="md")
                         tgb.text("_есть сегодня, но не было в reference-окне_", mode="md", class_name="hint")
-                        tgb.table(data="{data_pools_entered}", page_size=7)
+                        tgb.table(data="{data_pools_entered}", columns="{pools_cols}",
+                                  rebuild=True, page_size=7)
 
                 with tgb.part(class_name="card"):
                     tgb.chart(figure="{fig_daily}")
