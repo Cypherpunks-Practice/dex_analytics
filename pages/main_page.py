@@ -221,9 +221,8 @@ with tgb.Page() as page:
             # --------------------------- Топ-50 ---------------------------
             with tgb.part(id="sec-top"):
                 tgb.text("## Топ-50 — {top_dimension}", mode="md")
-                with tgb.layout("1fr 2fr", class_name="cards2"):
-                    with tgb.part(class_name="{card1_class}"):
-                        tgb.button(label="", class_name="click-layer", on_action="card_1_pressed")
+                with tgb.layout("1fr 1fr", class_name="cards"):
+                    with tgb.part(class_name="card"):
                         with tgb.part(class_name="parts-ctl"):
                             tgb.text(
                                 "Секторов на диаграмме: **{pie_parts}** _(50 = все по отдельности)_",
@@ -234,12 +233,12 @@ with tgb.Page() as page:
                                 min=config.PARTS_MIN, max=config.PARTS_MAX,
                                 step=1, continuous=False, on_change=rebuild_pie,
                             )
-                        tgb.chart(figure="{fig_pie}", class_name="chart", style={"width": "100%", "height": "100%"})
-                    with tgb.part(class_name="{card2_class}"):
-                        tgb.button(label="", class_name="click-layer", on_action="card_2_pressed")
+                        tgb.chart(figure="{fig_pie}")
+
+                    with tgb.part(class_name="card"):
                         with tgb.part(class_name="parts-ctl"):
                             tgb.text(
-                                "Серий на графике: **{area1_parts}** _(50 = все по отдельности)_",
+                                "Серий на графике: **{area1_parts}** _(50 = все пулы)_",
                                 mode="md", class_name="hint",
                             )
                             tgb.slider(
@@ -247,10 +246,11 @@ with tgb.Page() as page:
                                 min=config.PARTS_MIN, max=config.PARTS_MAX,
                                 step=1, continuous=False, on_change=rebuild_area1,
                             )
-                        tgb.chart(figure="{fig_area1}", class_name="chart", style={"width": "100%", "height": "100%"})
-                    with tgb.part(class_name="{card3_class}"):
-                        tgb.button(label="", class_name="click-layer", on_action="card_3_pressed")
-                        tgb.table(data="{data_top50}", columns="{top_cols}", rebuild=True, page_size=10, page_size_options=[10, 25, 50])
+                        tgb.chart(figure="{fig_area1}")
+
+                with tgb.part(class_name="card"):
+                    tgb.table(data="{data_top50}", columns="{top_cols}", rebuild=True,
+                              page_size=10, page_size_options=[10, 25, 50])
 
             # ----------------------- Анализ рынка -----------------------
             with tgb.part(id="sec-market"):
