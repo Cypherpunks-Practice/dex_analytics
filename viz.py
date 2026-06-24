@@ -23,7 +23,18 @@ _LAYOUT = dict(
     title_y=0.96,                        
     title_yanchor="top",
     legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),  
-    height=370,                           
+    height=370,
+    
+    hovermode="x unified",  Добавлена spike line
+    
+    xaxis=dict(
+        showspikes=True,
+        spikemode="across",
+        spikesnap="cursor",
+        spikecolor="#94a3b8",
+        spikethickness=1,
+        spikedash="dash",
+    )
 )
 
 
