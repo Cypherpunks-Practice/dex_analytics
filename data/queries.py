@@ -145,9 +145,6 @@ def _reference_where(reference: str, col: str = "mv.minute_bucket") -> str:
             f"AND {col} < toStartOfDay({now}) - INTERVAL {offset - 1} DAY")
 
 
-
-
-
 def _scope(filters: dict, *, time_sql: str | None = None):
     """Собрать WHERE по игрокам/пулам/времени и params для clickhouse-connect.
 
