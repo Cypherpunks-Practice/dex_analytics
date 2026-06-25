@@ -19,7 +19,7 @@ import callbacks
 import config
 from data import clickhouse
 # Импортируем всё пространство имён страницы в __main__: Taipy ищет
-# привязываемые переменные (sharks, data_*, fig_* …), хелперы выражений
+# привязываемые переменные (include_sharks, data_*, fig_* …), хелперы выражений
 # (chip_label) и колбэки именно в модуле, где создаётся Gui. Поэтому имена
 # должны существовать здесь, в __main__.
 from pages.main_page import *  # noqa: F401,F403

@@ -15,15 +15,17 @@ from taipy.gui import builder as tgb
 
 # Импортируем колбэки голыми именами: Taipy резолвит on_action/on_change по
 # имени функции в пространстве имён модуля страницы, поэтому имена должны быть
-# доступны напрямую (а не как callbacks.add_shark).
+# доступны напрямую (а не как callbacks.add_include_shark).
 from callbacks import (
+    add_exclude_shark,
+    add_include_shark,
     add_pool,
-    add_shark,
     on_change_refresh,
     rebuild_area1,
     rebuild_pie,
+    remove_exclude_shark,
+    remove_include_shark,
     remove_pool,
-    remove_shark,
     toggle_metric,
     toggle_sidebar,
 )
@@ -34,10 +36,15 @@ import config
 # ---------------------------------------------------------------------------
 # Фильтры
 time_range = config.TIME_RANGES[config.DEFAULT_TIME_RANGE]
-sharks: list[str] = []
-shark_input = ""
+# Два отдельных поля игроков: «Включить» (без режима) и «Исключить» (тоггл).
+include_sharks: list[str] = []
+include_shark_input = ""
+exclude_sharks: list[str] = []
+exclude_shark_input = ""
+exclude_mode = config.EXCLUDE_PLAYER_MODES[config.DEFAULT_EXCLUDE_PLAYER_MODE]
 pools: list[str] = []
 pool_input = ""
+pools_mode = config.POOL_MODES[config.DEFAULT_POOL_MODE]
 
 # Топ-50: разрез (пулы/игроки) + на сколько частей делить графики (2..50).
 top_dimension = config.TOP_DIMENSION[config.DEFAULT_TOP_DIMENSION]
@@ -76,6 +83,7 @@ sidebar_open = True
 # Данные таблиц (пустые до on_init)
 _empty_df = pd.DataFrame()
 data_top50 = _empty_df
+data_top50_pie = _empty_df       # 2-колоночный срез [entity, volume] для пирога
 data_area1 = _empty_df          # широкий df filled area 1 — режется ползунком
 data_pools_left = _empty_df
 data_pools_entered = _empty_df
@@ -86,7 +94,8 @@ fig_area1 = go.Figure()
 fig_area2 = go.Figure()
 fig_heatmap1 = go.Figure()
 fig_heatmap2 = go.Figure()
-fig_daily = go.Figure()
+fig_daily_micro = go.Figure()
+fig_daily_macro = go.Figure()
 fig_metric_ts = go.Figure()
 fig_metric_pair = go.Figure()
 
@@ -96,6 +105,8 @@ ref_lov = list(config.TREND_REFERENCES.values())
 metric_lov = list(config.TREND_METRICS.values())
 group_lov = list(config.TREND_GROUP_BY.values())
 dimension_lov = list(config.TOP_DIMENSION.values())
+exclude_mode_lov = list(config.EXCLUDE_PLAYER_MODES.values())
+pools_mode_lov = list(config.POOL_MODES.values())
 
 # Максимум чипсов-слотов, отрисовываемых для каждого фильтра.
 MAX_CHIPS = 15
@@ -173,7 +184,7 @@ with tgb.Page() as page:
             tgb.html("a", "Анализ рынка", href="#sec-market")
             tgb.html("a", "Анализ тренда", href="#sec-trend")
 
-            tgb.text("#### Топ-50: разрез", mode="md")
+            tgb.text("#### Топ-50", mode="md")
             tgb.toggle(value="{top_dimension}", lov=dimension_lov, on_change=on_change_refresh)
 
             tgb.text("#### Временной диапазон", mode="md")
@@ -182,25 +193,47 @@ with tgb.Page() as page:
                 on_change=on_change_refresh,
             )
 
-            # --- Фильтр: акулы ---
-            tgb.text("#### Адреса акул / кита", mode="md")
+            # --- Фильтр: ВКЛЮЧИТЬ игроков (без режима — всегда «их пулы») ---
+            tgb.text("#### Включить игроков", mode="md")
+            tgb.text("_аналитика пулов, где были эти адреса_", mode="md", class_name="hint")
             with tgb.layout("1fr auto", class_name="add-row"):
-                tgb.input(value="{shark_input}", label="0x… адрес", on_action=add_shark)
-                tgb.button("＋", on_action=add_shark, class_name="add-btn")
+                tgb.input(value="{include_shark_input}", label="0x… адрес",
+                          on_action=add_include_shark)
+                tgb.button("＋", on_action=add_include_shark, class_name="add-btn")
             # Чип-слоты обёрнуты в part с render: у button нет свойства render,
             # поэтому пустые слоты гасятся именно на уровне part.
             with tgb.part(class_name="chips"):
                 for _i in range(MAX_CHIPS):
-                    with tgb.part(render="{len(sharks) > %d}" % _i, class_name="chip"):
+                    with tgb.part(render="{len(include_sharks) > %d}" % _i, class_name="chip"):
                         tgb.button(
-                            "{chip_label(sharks, %d)}" % _i,
-                            id="shark_chip_%d" % _i,
-                            on_action=remove_shark,
+                            "{chip_label(include_sharks, %d)}" % _i,
+                            id="inc_chip_%d" % _i,
+                            on_action=remove_include_shark,
+                        )
+
+            # --- Фильтр: ИСКЛЮЧИТЬ игроков (режим: их пулы / их сделки) ---
+            tgb.text("#### Исключить игроков", mode="md")
+            tgb.toggle(value="{exclude_mode}", lov=exclude_mode_lov,
+                       on_change=on_change_refresh, class_name="mode-toggle")
+            with tgb.layout("1fr auto", class_name="add-row"):
+                tgb.input(value="{exclude_shark_input}", label="0x… адрес",
+                          on_action=add_exclude_shark)
+                tgb.button("＋", on_action=add_exclude_shark, class_name="add-btn")
+            with tgb.part(class_name="chips"):
+                for _i in range(MAX_CHIPS):
+                    with tgb.part(render="{len(exclude_sharks) > %d}" % _i, class_name="chip"):
+                        tgb.button(
+                            "{chip_label(exclude_sharks, %d)}" % _i,
+                            id="exc_chip_%d" % _i,
+                            on_action=remove_exclude_shark,
                         )
 
             # --- Фильтр: пулы ---
             tgb.text("#### Адреса пулов", mode="md")
             tgb.text("_пусто = весь рынок_", mode="md", class_name="hint")
+            # Режим: «Только» выбранные / «Кроме» выбранных.
+            tgb.toggle(value="{pools_mode}", lov=pools_mode_lov,
+                       on_change=on_change_refresh, class_name="mode-toggle")
             with tgb.layout("1fr auto", class_name="add-row"):
                 tgb.input(value="{pool_input}", label="0x… адрес пула", on_action=add_pool)
                 tgb.button("＋", on_action=add_pool, class_name="add-btn")
@@ -301,7 +334,9 @@ with tgb.Page() as page:
                                   rebuild=True, page_size=7)
 
                 with tgb.part(class_name="card"):
-                    tgb.chart(figure="{fig_daily}")
+                    tgb.chart(figure="{fig_daily_micro}")
+                with tgb.part(class_name="card"):
+                    tgb.chart(figure="{fig_daily_macro}")
                 with tgb.layout("1fr 1fr", class_name="cards"):
                     with tgb.part(class_name="card"):
                         tgb.chart(figure="{fig_heatmap1}")

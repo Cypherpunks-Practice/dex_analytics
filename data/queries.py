@@ -145,37 +145,90 @@ def _reference_where(reference: str, col: str = "mv.minute_bucket") -> str:
             f"AND {col} < toStartOfDay({now}) - INTERVAL {offset - 1} DAY")
 
 
-def _scope(filters: dict, *, time_sql: str | None = None):
-    """Собрать WHERE по игрокам/пулам/времени и params для clickhouse-connect.
+def _scope(filters: dict, *, time_sql: str | None = None,
+           include_clause: str = "membership",
+           apply_exclude: bool = True, apply_pools: bool = True):
+    """Собрать WHERE по фильтрам игроков/пулов/времени и params для clickhouse-connect.
 
-    Пустой `players` → все известные игроки из таблицы traders; пустой `pools` →
-    весь рынок. Адреса нормализуются в нижний регистр с обеих сторон.
-    Возвращает (where_sql, params).
+    Два независимых списка игроков (см. config.EXCLUDE_PLAYER_MODES):
+      include_players — поле «Включить», всегда include: «пулы, в которых были эти
+                        игроки» (членство пула через подзапрос);
+      exclude_players — поле «Исключить», глобальное вычитание по exclude_mode:
+                        exclude_pools  → убрать целиком пулы этих игроков;
+                        exclude_trades → убрать только их сделки.
+    Плюс фильтр пулов (`pools` / `pools_mode`: include = только, exclude = кроме).
+
+    Членство пула (include и exclude_pools) считается в пределах того же окна
+    времени, что и основной запрос: подзапрос несёт ту же `tw`-клаузулу, а его
+    внутренний alias тоже `mv`, поэтому строка времени переиспользуется.
+
+    Параметры тонкой настройки (по умолчанию — базовый скоуп):
+      include_clause:
+        "membership" — `pool IN (include-пулы)` если include_players непуст,
+                       иначе traders-дефолт (как при пустом фильтре);
+        "trades"     — `has(iplayers, trader)` если непуст, иначе traders-дефолт;
+                       нужно для «микро» и «ушли/зашли» (именно их сделки);
+        "off"        — клаузулу include не добавлять (обогащённые таблицы и
+                       «макро по игрокам» считают объём отдельно через -MergeIf).
+      apply_exclude=False — не добавлять вычитание exclude_players.
+      apply_pools=False   — не добавлять клаузулу пулов (например, чтобы «общий
+                            объём игрока» считался по всему рынку).
+
+    Адреса нормализуются в нижний регистр; параметры названы раздельно
+    (`iplayers`/`xplayers`/`pools`), чтобы не конфликтовать при совмещении.
+    Возвращает (where_sql, params); where == "1", если ограничений нет.
     """
     clauses: list[str] = []
     params: dict = {}
 
-    players = [p.strip().lower() for p in (filters.get("players") or []) if p.strip()]
+    iplayers = [p.strip().lower() for p in (filters.get("include_players") or []) if p.strip()]
+    xplayers = [p.strip().lower() for p in (filters.get("exclude_players") or []) if p.strip()]
     pools = [p.strip().lower() for p in (filters.get("pools") or []) if p.strip()]
+    exclude_mode = filters.get("exclude_mode", config.DEFAULT_EXCLUDE_PLAYER_MODE)
+    pools_mode = filters.get("pools_mode", config.DEFAULT_POOL_MODE)
 
-    if players:
-        clauses.append("has({players:Array(String)}, lower(mv.trader_address))")
-        params["players"] = players
-    else:
-        clauses.append(
-            "lower(mv.trader_address) IN (SELECT lower(contract_address) FROM traders)"
-        )
-
-    if pools:
-        clauses.append("has({pools:Array(String)}, lower(mv.pool_address))")
-        params["pools"] = pools
-
+    # Окно времени считаем заранее — оно же уходит внутрь подзапросов членства.
     tw = time_sql if time_sql is not None else _time_where(
         filters.get("time_range", "today"))
+
+    def _membership(param: str) -> str:
+        member = (f"SELECT DISTINCT pool_address FROM mv_dex_analytics_data AS mv "
+                  f"WHERE has({{{param}:Array(String)}}, lower(mv.trader_address))")
+        return member + (f" AND {tw}" if tw else "")
+
+    # --- Включить игроков ---
+    if include_clause != "off":
+        if iplayers:
+            params["iplayers"] = iplayers
+            if include_clause == "trades":
+                clauses.append("has({iplayers:Array(String)}, lower(mv.trader_address))")
+            else:  # membership — пулы, в которых были эти игроки
+                clauses.append(f"mv.pool_address IN ({_membership('iplayers')})")
+        else:
+            clauses.append(
+                "lower(mv.trader_address) IN (SELECT lower(contract_address) FROM traders)"
+            )
+
+    # --- Исключить игроков (глобальное вычитание) ---
+    if apply_exclude and xplayers:
+        params["xplayers"] = xplayers
+        if exclude_mode == "exclude_trades":
+            clauses.append("NOT has({xplayers:Array(String)}, lower(mv.trader_address))")
+        else:  # exclude_pools — убрать целиком пулы этих игроков
+            clauses.append(f"mv.pool_address NOT IN ({_membership('xplayers')})")
+
+    # --- Пулы ---
+    if apply_pools and pools:
+        params["pools"] = pools
+        if pools_mode == "exclude":
+            clauses.append("NOT has({pools:Array(String)}, lower(mv.pool_address))")
+        else:
+            clauses.append("has({pools:Array(String)}, lower(mv.pool_address))")
+
     if tw:
         clauses.append(tw)
 
-    return " AND ".join(clauses), params
+    return (" AND ".join(clauses) or "1"), params
 
 
 def _pivot_wide(df: pd.DataFrame, idx: str) -> pd.DataFrame:
@@ -214,9 +267,44 @@ def _hitmap_bucket(time_range: str, col: str = "mv.minute_bucket") -> str:
 
 # --- Кейс 1: Анализ рынка ---------------------------------------------------
 def get_top_pools(filters: dict):
-    """Топ-50 пулов по объёму. DataFrame[pool, volume], по убыванию."""
+    """Топ-50 пулов. Обычно DataFrame[pool, volume], по убыванию.
+
+    При ВКЛЮЧЕНИИ игроков (include_players непуст) возвращает обогащённый
+    DataFrame[pool, player_vol, pool_total, share]: объём включённых игроков в
+    пуле, общий объём пула (все трейдеры) и доля игроков в %. Оба числа считаются
+    за один скан через комбинатор -MergeIf; HAVING оставляет только пулы, где эти
+    игроки реально торговали. Исключения (exclude_players) применяются и тут.
+    """
     if clickhouse.USE_STUB:
         return stubs.top_pools(config.TOP_POOLS_LIMIT)
+
+    iplayers = [p.strip().lower() for p in (filters.get("include_players") or []) if p.strip()]
+    enriched = bool(iplayers)
+
+    if enriched:
+        # include_clause="off" → WHERE = исключения + (фильтр пулов) + время; сами
+        # «их пулы» отбирает HAVING player_vol > 0. params["iplayers"] нужен для
+        # -MergeIf, добавляем вручную.
+        where, params = _scope(filters, include_clause="off")
+        params["iplayers"] = iplayers
+        sql = f"""
+            SELECT {_POOL_LABEL_FULL} AS pool,
+                   round(sumMergeIf(mv.total_volume,
+                         has({{iplayers:Array(String)}}, lower(mv.trader_address))), 2) AS player_vol,
+                   round(sumMerge(mv.total_volume), 2) AS pool_total,
+                   round(100 * player_vol / nullIf(pool_total, 0), 2) AS share
+            FROM {_MV}
+            {_DIM}
+            WHERE {where}
+            GROUP BY mv.pool_address, d.pair
+            HAVING player_vol > 0
+            ORDER BY player_vol DESC
+            LIMIT {int(config.TOP_POOLS_LIMIT)}
+        """
+        df = clickhouse.execute(sql, params)
+        return df if not df.empty else pd.DataFrame(
+            {"pool": [], "player_vol": [], "pool_total": [], "share": []})
+
     where, params = _scope(filters)
     sql = f"""
         SELECT {_POOL_LABEL_FULL} AS pool,
@@ -233,12 +321,46 @@ def get_top_pools(filters: dict):
 
 
 def get_top_players(filters: dict):
-    """Топ-50 игроков по объёму. DataFrame[player, volume], по убыванию.
+    """Топ-50 игроков. Обычно DataFrame[player, volume], по убыванию.
 
-    Зеркало get_top_pools, но группировка по трейдеру. Подпись — с ПОЛНЫМ адресом.
+    При ВКЛЮЧЕНИИ пулов (pools непуст, pools_mode == include) возвращает
+    обогащённый DataFrame[player, player_in_pool, player_total, share]: объём
+    игрока в выбранных пулах, его ОБЩИЙ объём по всему рынку и долю выбранных
+    пулов в %. Зеркало get_top_pools: объём в пулах — через -MergeIf, общий
+    объём — обычным sumMerge без ограничения по пулам (потому WHERE без фильтра
+    пулов и без фильтра игроков — таблица отвечает «кто торгует в этих пулах»).
     """
     if clickhouse.USE_STUB:
         return stubs.top_players(config.TOP_POOLS_LIMIT)
+
+    pools = [p.strip().lower() for p in (filters.get("pools") or []) if p.strip()]
+    enriched = bool(pools) and filters.get(
+        "pools_mode", config.DEFAULT_POOL_MODE) == "include"
+
+    if enriched:
+        # WHERE = окно времени + исключения → player_total по всему рынку (без
+        # фильтра пулов); объём в выбранных пулах берём через -MergeIf; HAVING
+        # оставляет лишь игроков, торговавших в этих пулах. params["pools"] вручную.
+        where, params = _scope(filters, include_clause="off", apply_pools=False)
+        params["pools"] = pools
+        sql = f"""
+            SELECT {_SHARK_LABEL_FULL} AS player,
+                   round(sumMergeIf(mv.total_volume,
+                         has({{pools:Array(String)}}, lower(mv.pool_address))), 2) AS player_in_pool,
+                   round(sumMerge(mv.total_volume), 2) AS player_total,
+                   round(100 * player_in_pool / nullIf(player_total, 0), 2) AS share
+            FROM {_MV}
+            {_TRD}
+            WHERE {where}
+            GROUP BY mv.trader_address, tr.label
+            HAVING player_in_pool > 0
+            ORDER BY player_in_pool DESC
+            LIMIT {int(config.TOP_POOLS_LIMIT)}
+        """
+        df = clickhouse.execute(sql, params)
+        return df if not df.empty else pd.DataFrame(
+            {"player": [], "player_in_pool": [], "player_total": [], "share": []})
+
     where, params = _scope(filters)
     sql = f"""
         SELECT {_SHARK_LABEL_FULL} AS player,
@@ -348,8 +470,10 @@ def _pools_in_window(filters: dict, time_sql: str, metric: str = "volume") -> pd
     выражение `_TREND_EXPR[metric]`. Презентационную подпись столбца под метрику
     навешивает слой колбэков.
     """
+    # Членство пула в окне считаем по сделкам ВКЛЮЧЁННЫХ игроков (include_clause
+    # = "trades"): таблицы «ушли/зашли» отвечают, где играли именно они.
     expr = _TREND_EXPR.get(metric, _TREND_EXPR["volume"])
-    where, params = _scope(filters, time_sql=time_sql)
+    where, params = _scope(filters, time_sql=time_sql, include_clause="trades")
     sql = f"""
         SELECT {_POOL_LABEL} AS pool,
                round({expr}, 2) AS volume
@@ -404,37 +528,34 @@ def get_pools_entered(filters: dict, reference: str, metric: str = "volume"):
     return get_pools_delta(filters, reference, metric)["entered"]
 
 
-def get_daily_changes(filters: dict, metric: str, group_by: str):
-    """Изменение метрики по дням, широкий формат (колонка на серию)."""
-    if clickhouse.USE_STUB:
-        return stubs.daily_changes(metric, group_by)
+def _daily_grouped(where, params, expr, bucket, key, label, join, group_cols,
+                   series_where=None, series_params=None):
+    """Широкий df [time × топ-серии]. NaN -> 0.
 
-    tr = filters.get("time_range", "today")
-    # График «по дням»: под-суточные окна расширяем до 14 дней, иначе вырожден.
-    if tr in ("week", "month", "all"):
-        time_sql = _time_where(tr)
-    else:
-        time_sql = f"mv.minute_bucket >= toStartOfDay({_now_sql()}) - INTERVAL 14 DAY"
+    `bucket` — SQL-выражение временного бакета (из `_bucket(time_range)`): для
+    под-суточных окон это 1-/10-минутки, для недели — 12 ч, иначе день. Колонку
+    оси оставляем под именем `day` (контракт `_pivot_wide`/`grouped_lines`), но
+    по сути это «время».
 
-    expr = _TREND_EXPR.get(metric, _TREND_EXPR["volume"])
-    if group_by == "player":
-        join, label, key = _TRD, _SHARK_LABEL, "mv.trader_address"
-        group_cols = "mv.trader_address, tr.label"
-    else:
-        join, label, key = _DIM, _POOL_LABEL, "mv.pool_address"
-        group_cols = "mv.pool_address, d.pair"
-
-    where, params = _scope(filters, time_sql=time_sql)
+    Серии (топ-N по объёму) выбираются из `series_where` (по умолчанию = where).
+    Разделение нужно, чтобы РАНЖИРОВАТЬ серии по одному скоупу (объём выбранных
+    игроков), а ЗНАЧЕНИЯ показывать по другому (общий объём пула) — тогда микро- и
+    макро-графики «по пулам» строятся по одному и тому же набору пулов и
+    сопоставимы визуально.
+    """
+    sw = series_where if series_where is not None else where
+    sp = series_params if series_params is not None else params
+    merged = {**sp, **params}  # параметры обоих скоупов (имена не конфликтуют)
     sql = f"""
         WITH top_series AS (
             SELECT {key} AS k
             FROM {_MV}
-            WHERE {where}
+            WHERE {sw}
             GROUP BY k
             ORDER BY sumMerge(mv.total_volume) DESC
             LIMIT {int(config.AREA_POOLS_LIMIT)}
         )
-        SELECT toStartOfDay(mv.minute_bucket) AS day,
+        SELECT {bucket} AS day,
                {label} AS series,
                round({expr}, 2) AS value
         FROM {_MV}
@@ -443,7 +564,85 @@ def get_daily_changes(filters: dict, metric: str, group_by: str):
         GROUP BY day, {group_cols}
         ORDER BY day
     """
-    return _pivot_wide(clickhouse.execute(sql, params), "day")
+    return _pivot_wide(clickhouse.execute(sql, merged), "day")
+
+
+def _daily_total(where, params, expr, bucket, series_name: str):
+    """Широкий df [day, <series_name>] — одна серия (без группировки по сущности).
+
+    `bucket` — выражение временного бакета (см. `_daily_grouped`)."""
+    sql = f"""
+        SELECT {bucket} AS day,
+               round({expr}, 2) AS value
+        FROM {_MV}
+        WHERE {where}
+        GROUP BY day
+        ORDER BY day
+    """
+    df = clickhouse.execute(sql, params)
+    if df.empty:
+        return pd.DataFrame({"day": []})
+    return df.rename(columns={"value": series_name})
+
+
+def get_daily_micro_macro(filters: dict, metric: str, group_by: str) -> dict:
+    """Динамика метрики по времени в разрезе микро/макро. dict[micro|macro -> wide df].
+
+    Окно — ВЫБРАННЫЙ `time_range`, шаг бакета — `_bucket(time_range)` (как у
+    area-графиков): «последний час» → минутки, «сегодня/вчера» → 10-минутки,
+    «неделя» → 12 ч, «месяц/всё время» → день. Раньше под-недельные окна молча
+    подменялись на «последние 14 дней по дням» — это путало (метки = чужие даты).
+
+    group_by == "pool":
+        micro — объём ВКЛЮЧЁННЫХ игроков в их пулах (серии = пулы);
+        macro — общий объём ВСЕХ трейдеров в тех же пулах (серии = пулы).
+    group_by == "player":
+        micro — личные объёмы включённых игроков по всему рынку (серии = игроки);
+        macro — общий объём всего рынка DEX, минус исключения (одна серия «Рынок»).
+
+    Если игроки не включены — micro пустой (график рисуется без линий).
+    """
+    if clickhouse.USE_STUB:
+        base = stubs.daily_changes(metric, group_by)
+        return {"micro": base, "macro": base}
+
+    tr = filters.get("time_range", "today")
+    bucket = _bucket(tr)  # окно берёт сам _scope из filters["time_range"]
+    expr = _TREND_EXPR.get(metric, _TREND_EXPR["volume"])
+    iplayers = [p.strip().lower() for p in (filters.get("include_players") or []) if p.strip()]
+    empty = pd.DataFrame({"day": []})
+
+    if group_by == "player":
+        # micro — включённые игроки по всему рынку (игнорируем фильтр пулов).
+        if iplayers:
+            w_micro, p_micro = _scope(filters, include_clause="trades", apply_pools=False)
+            micro = _daily_grouped(w_micro, p_micro, expr, bucket, "mv.trader_address",
+                                   _SHARK_LABEL, _TRD, "mv.trader_address, tr.label")
+        else:
+            micro = empty
+        # macro — весь рынок одной линией (минус исключения).
+        w_macro, p_macro = _scope(filters, include_clause="off", apply_pools=False)
+        macro = _daily_total(w_macro, p_macro, expr, bucket, "Рынок")
+        return {"micro": micro, "macro": macro}
+
+    # group_by == "pool"
+    # macro — вся активность в пулах текущего скоупа (при include — пулы игроков).
+    w_macro, p_macro = _scope(filters)
+    if iplayers:
+        # micro — только сделки включённых игроков (их сделки и так в их пулах).
+        # Набор пулов (топ по объёму игроков) общий для обоих графиков, чтобы
+        # «когда заходил кит» и «рос ли пул» читались на одних и тех же пулах.
+        w_micro, p_micro = _scope(filters, include_clause="trades")
+        micro = _daily_grouped(w_micro, p_micro, expr, bucket, "mv.pool_address",
+                               _POOL_LABEL, _DIM, "mv.pool_address, d.pair")
+        macro = _daily_grouped(w_macro, p_macro, expr, bucket, "mv.pool_address",
+                               _POOL_LABEL, _DIM, "mv.pool_address, d.pair",
+                               series_where=w_micro, series_params=p_micro)
+    else:
+        micro = empty
+        macro = _daily_grouped(w_macro, p_macro, expr, bucket, "mv.pool_address",
+                               _POOL_LABEL, _DIM, "mv.pool_address, d.pair")
+    return {"micro": micro, "macro": macro}
 
 
 def get_heatmap_sharks_pools(filters: dict, metric: str):

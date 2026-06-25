@@ -99,6 +99,25 @@
     min-width: 36px;
 }
 
+.mode-toggle {
+    display: flex;
+    width: 100%;
+    margin: 2px 0 8px;
+}
+
+.mode-toggle .MuiToggleButtonGroup-root {
+    display: flex;
+    width: 100%;
+}
+
+.mode-toggle .MuiToggleButton-root {
+    flex: 1 1 0;
+    font-size: 0.72rem;
+    line-height: 1.1;
+    padding: 3px 4px;
+    text-transform: none;
+}
+
 /* --- Чипсы фильтров (chip = part c render, внутри кнопка-«✕») ---------- */
 .chips {
     display: flex;

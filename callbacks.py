@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import pandas as pd
+
 import config
 import viz
 from data import queries
@@ -21,6 +23,8 @@ _REF_KEY = {v: k for k, v in config.TREND_REFERENCES.items()}
 _METRIC_KEY = {v: k for k, v in config.TREND_METRICS.items()}
 _GROUP_KEY = {v: k for k, v in config.TREND_GROUP_BY.items()}
 _DIM_KEY = {v: k for k, v in config.TOP_DIMENSION.items()}
+_EXCLUDE_MODE_KEY = {v: k for k, v in config.EXCLUDE_PLAYER_MODES.items()}
+_POOL_MODE_KEY = {v: k for k, v in config.POOL_MODES.items()}
 
 # Заголовок графика filled area секции Топ-50 — по разрезу.
 _AREA1_TITLE = {"pool": "Перетекание средств между пулами",
@@ -38,12 +42,66 @@ def _fmt(value) -> str:
 
 
 def get_filters(state) -> dict:
-    """Собрать словарь фильтров из текущего состояния."""
+    """Собрать словарь фильтров из текущего состояния.
+
+    Два отдельных списка игроков: `include_sharks` (поле «Включить», всегда
+    include) и `exclude_sharks` (поле «Исключить», режим из тоггла exclude_mode).
+    """
     return {
-        "players": list(state.sharks),
+        "include_players": list(state.include_sharks),
+        "exclude_players": list(state.exclude_sharks),
+        "exclude_mode": _EXCLUDE_MODE_KEY.get(
+            state.exclude_mode, config.DEFAULT_EXCLUDE_PLAYER_MODE),
         "pools": list(state.pools),
+        "pools_mode": _POOL_MODE_KEY.get(
+            state.pools_mode, config.DEFAULT_POOL_MODE),
         "time_range": _TIME_KEY.get(state.time_range, config.DEFAULT_TIME_RANGE),
     }
+
+
+def _build_top50(top, dim, entity_title, players, pools):
+    """Собрать (data, columns, pie_df) для секции Топ-50 из df слоя данных.
+
+    Обогащённый df (включение игроков → разрез «Пулы», или включение пулов →
+    разрез «Игроки») даёт таблицу с тремя числовыми колонками (объём
+    выбранных / общий / доля %); обычный df — прежнюю таблицу entity|volume.
+    Пирог всегда кормим 2-колоночным df [entity, volume] (volume — основной
+    объём: объём игроков / объём в пуле / просто объём).
+    """
+    cols = set(top.columns)
+    if dim == "pool" and {"player_vol", "pool_total", "share"} <= cols:
+        many = len(players) > 1
+        columns = {
+            "entity": {"index": 0, "title": entity_title},
+            "player_vol": {"index": 1,
+                           "title": "Объём выбранных игроков" if many else "Объём игрока"},
+            "pool_total": {"index": 2, "title": "Общий объём пула"},
+            "share": {"index": 3,
+                      "title": "Доля выбранных игроков, %" if many else "Доля игрока, %"},
+        }
+        pie_df = top[["entity", "player_vol"]].rename(columns={"player_vol": "volume"})
+        return top, columns, pie_df
+
+    if dim == "player" and {"player_in_pool", "player_total", "share"} <= cols:
+        many = len(pools) > 1
+        columns = {
+            "entity": {"index": 0, "title": entity_title},
+            "player_in_pool": {"index": 1,
+                               "title": "Объём в выбранных пулах" if many else "Объём в пуле"},
+            "player_total": {"index": 2, "title": "Общий объём игрока"},
+            "share": {"index": 3,
+                      "title": "Доля выбранных пулов, %" if many else "Доля пула, %"},
+        }
+        pie_df = top[["entity", "player_in_pool"]].rename(
+            columns={"player_in_pool": "volume"})
+        return top, columns, pie_df
+
+    columns = {
+        "entity": {"index": 0, "title": entity_title},
+        "volume": {"index": 1, "title": "Объём"},
+    }
+    pie_df = top if "volume" in cols else pd.DataFrame({"entity": [], "volume": []})
+    return top, columns, pie_df
 
 
 # --- Главное обновление -----------------------------------------------------
@@ -65,12 +123,10 @@ def refresh_all(state):
         top = queries.get_top_pools(f).rename(columns={"pool": "entity"})
         area = queries.get_area_by_pool(f, tmetric)
         entity_title = "Пул"
-    state.data_top50 = top
-    state.top_cols = {
-        "entity": {"index": 0, "title": entity_title},
-        "volume": {"index": 1, "title": "Объём"},
-    }
-    state.fig_pie = viz.pie_top_pools(top, int(state.pie_parts))
+    state.data_top50, state.top_cols, pie_df = _build_top50(
+        top, dim, entity_title, f["include_players"], f["pools"])
+    state.data_top50_pie = pie_df
+    state.fig_pie = viz.pie_top_pools(pie_df, int(state.pie_parts))
 
     # --- Анализ рынка: 7 метрик (total) ---
     pair = (state.market_pair or "").strip() or None
@@ -105,10 +161,17 @@ def refresh_all(state):
         "pool": {"index": 0, "title": "Пул"},
         "volume": {"index": 1, "title": config.TREND_METRICS[tmetric]},
     }
-    state.fig_daily = viz.grouped_lines(
-        queries.get_daily_changes(f, tmetric, group_by),
-        title=f"Изменение по дням ({state.trend_metric}, {state.trend_group_by.lower()})",
-    )
+    # График «изменение по дням» разделён на микро (выбранные игроки) и макро
+    # (контекст: пулы / весь рынок) — см. queries.get_daily_micro_macro.
+    daily = queries.get_daily_micro_macro(f, tmetric, group_by)
+    if group_by == "player":
+        micro_title = f"Микро: объёмы выбранных игроков ({state.trend_metric})"
+        macro_title = f"Макро: объёмы всех игроков ({state.trend_metric})"
+    else:
+        micro_title = f"Микро: объём выбранных игроков в их пулах ({state.trend_metric})"
+        macro_title = f"Макро: общие объёмы пулов ({state.trend_metric})"
+    state.fig_daily_micro = viz.grouped_lines(daily["micro"], title=micro_title)
+    state.fig_daily_macro = viz.grouped_lines(daily["macro"], title=macro_title)
     state.fig_heatmap1 = viz.heatmap(
         queries.get_heatmap_sharks_pools(f, tmetric), title="Хитмап: топ-10 акул × топ-10 пулов"
     )
@@ -150,9 +213,10 @@ def on_change_refresh(state, var_name=None, value=None):
 def rebuild_pie(state, var_name=None, value=None):
     """Ползунок круговой диаграммы: пересобрать её под новое число секторов.
 
-    Данные не перезапрашиваем — режем уже загруженный state.data_top50.
+    Данные не перезапрашиваем — режем уже загруженный state.data_top50_pie
+    (2-колоночный срез [entity, volume], пригодный для pie_top_pools).
     """
-    state.fig_pie = viz.pie_top_pools(state.data_top50, int(state.pie_parts))
+    state.fig_pie = viz.pie_top_pools(state.data_top50_pie, int(state.pie_parts))
 
 
 def rebuild_area1(state, var_name=None, value=None):
@@ -167,20 +231,37 @@ def rebuild_area1(state, var_name=None, value=None):
     )
 
 
-def add_shark(state):
-    val = (state.shark_input or "").strip()
-    if val and val not in state.sharks:
-        state.sharks = state.sharks + [val]
-    state.shark_input = ""
+def add_include_shark(state):
+    val = (state.include_shark_input or "").strip()
+    if val and val not in state.include_sharks:
+        state.include_sharks = state.include_sharks + [val]
+    state.include_shark_input = ""
     refresh_all(state)
 
 
-def remove_shark(state, id):
+def remove_include_shark(state, id):
     i = int(id.rsplit("_", 1)[1])
-    lst = list(state.sharks)
+    lst = list(state.include_sharks)
     if 0 <= i < len(lst):
         del lst[i]
-        state.sharks = lst
+        state.include_sharks = lst
+        refresh_all(state)
+
+
+def add_exclude_shark(state):
+    val = (state.exclude_shark_input or "").strip()
+    if val and val not in state.exclude_sharks:
+        state.exclude_sharks = state.exclude_sharks + [val]
+    state.exclude_shark_input = ""
+    refresh_all(state)
+
+
+def remove_exclude_shark(state, id):
+    i = int(id.rsplit("_", 1)[1])
+    lst = list(state.exclude_sharks)
+    if 0 <= i < len(lst):
+        del lst[i]
+        state.exclude_sharks = lst
         refresh_all(state)
 
 
