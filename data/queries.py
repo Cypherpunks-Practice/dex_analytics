@@ -145,9 +145,6 @@ def _reference_where(reference: str, col: str = "mv.minute_bucket") -> str:
             f"AND {col} < toStartOfDay({now}) - INTERVAL {offset - 1} DAY")
 
 
-
-
-
 def _scope(filters: dict, *, time_sql: str | None = None):
     """Собрать WHERE по игрокам/пулам/времени и params для clickhouse-connect.
 
@@ -531,7 +528,7 @@ def get_heatmap_time_pools(filters: dict, metric: str):
     if tc in ("last_hour", "today", "yesterday"):
         mat.columns = [pd.Timestamp(c).strftime("%H:%M") for c in mat.columns]
     else:
-        mat.columns = [pd.Timestamp(c).strftime("%m-%d") for c in mat.columns]
+        mat.columns = [pd.Timestamp(c).strftime("%d %b") for c in mat.columns]
     mat.index.name = None
     mat.columns.name = None
     return mat
