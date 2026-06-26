@@ -49,6 +49,62 @@ class user:
     def get_login(self):
         return self.login
     
+    def admin_add_user(self, login, password, is_admin):
+        '''
+        returns None if user is not admin, 
+        True if user has been added
+        False if user with this login already exists
+        '''
+        if self.is_admin == 1:
+
+            h = hashlib.sha256()
+            p = password
+            h.update(p.encode('utf-8'))
+            password_hash = h.hexdigest()
+
+            connection = sqlite3.connect('logins.db')
+            cursor = connection.cursor()
+            cursor.execute(f'SELECT * FROM logins WHERE login = "{login}"')
+            user_exists = cursor.fetchone()
+            
+            if not user_exists:
+                cursor.execute(f'INSERT INTO logins VALUES ("{login}", x\'{password_hash}\', {is_admin})')
+                connection.close()
+                return True
+            else:
+                connection.close()
+                return False
+            
+        else: return None
+
+    def admin_delete_user(self, login):
+        '''
+        returns None if user is not admin, 
+        else returns number of deleted users
+        '''
+        if self.is_admin == 1:
+            connection = sqlite3.connect('logins.db')
+            cursor = connection.cursor()
+            cursor.execute(f'DELETE FROM login WHERE login = "{login}"')
+            deletions_counter = cursor.rowcount()
+            connection.close()
+            return deletions_counter
+        else: return None
+
+    def admin_get_users_list(self):
+        '''
+        returns None if user is not admin, 
+        else returns users list in format [["name", is_admin],...]
+        '''
+        if self.is_admin == 1:
+            connection = sqlite3.connect('logins.db')
+            cursor = connection.cursor()
+            cursor.execute(f'SELECT login, is_admin FROM logins')
+            users_list = cursor.fetchall()
+            connection.close()
+            return users_list
+        else: return None
+    
 
 
 """ #That's the test:
