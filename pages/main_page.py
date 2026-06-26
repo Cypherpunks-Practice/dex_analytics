@@ -311,8 +311,10 @@ with tgb.Page() as page:
                     tgb.chart(figure="{fig_area2}")
 
 
+
 logged_in = False
 
 def on_navigate(state, page):
     if page == "dashboard" and not state.logged_in:
         return "/"
+

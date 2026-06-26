@@ -8,7 +8,7 @@ logged_in = False
 def login(state):
     print("LOGIN CLICKED")
     state.logged_in = True
-    navigate(state,"/dashboard")
+    navigate(state,"dashboard", force=True)
 
 with tgb.Page() as login_page:
 
@@ -30,7 +30,7 @@ with tgb.Page() as login_page:
                 "Войти",
                 on_action=login
             )
+            
 
-def login(state):
-    state.logged_in = True
-    state.navigate("dashboard")
+
+   
