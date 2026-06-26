@@ -64,9 +64,9 @@ pools_mode = config.POOL_MODES[config.DEFAULT_POOL_MODE]
 # (авторизация в разработке). Тогда сюда придёт логин из сессии.
 user_login = "demo_user"
 
-# --- Админ-панель (фронт-заглушки; бэкенд — будущий модуль `user`) -----------
-# Флаг админа. Заглушка: реальное значение даст будущий модуль `user`.
-# У не-админа админ-панель и её модалки не рендерятся (render="{is_admin}").
+# --- Админ-панель (связана с бэкендом data/login_logic.py) -------------------
+# Флаг видимости панели. Пока фронт-гейт (заглушка): его выставит логин-флоу из
+# роли вошедшего. Сами операции авторизует бэкенд (admin_* → None не-админу).
 is_admin = True
 # Видимость модалок админ-панели.
 show_admin_users = False
@@ -80,11 +80,9 @@ admin_create_role = "Юзер"
 admin_delete_login = ""
 admin_role_login = ""
 admin_role_lov = ["Юзер", "Админ"]
-# Заглушка списка юзеров (потом заменит выборка из модуля `user`).
-admin_users = pd.DataFrame({
-    "Логин": ["demo_user", "admin", "alice", "bob"],
-    "Роль":  ["Юзер", "Админ", "Юзер", "Юзер"],
-})
+# Список юзеров: пустой до открытия модалки — наполняется из БД
+# (callbacks._load_admin_users при open_admin_users).
+admin_users = pd.DataFrame({"Логин": [], "Роль": []})
 
 # Топ-50: разрез (пулы/игроки) + на сколько частей делить графики (2..50).
 top_dimension = config.TOP_DIMENSION[config.DEFAULT_TOP_DIMENSION]
@@ -306,9 +304,9 @@ with tgb.Page() as page:
         with tgb.part(class_name="content"):
 
             # ---- Верхняя строка: админ-панель (слева) + логин/выход (справа) ----
-            # Логин — из заглушки user_login (будущий модуль `user`); кнопка
-            # «Выйти» висит на колбэке-заглушке logout. Админ-панель (ряд кнопок)
-            # рендерится только админам (render="{is_admin}", тоже заглушка).
+            # Логин — из user_login (его выставит логин-флоу); кнопка «Выйти» —
+            # колбэк-заглушка logout. Админ-панель (ряд кнопок) рендерится только
+            # админам (render="{is_admin}" — пока фронт-гейт).
             with tgb.part(class_name="topbar"):
                 with tgb.part(render="{is_admin}", class_name="admin-bar"):
                     tgb.button("Список", on_action=open_admin_users, class_name="admin-btn")
@@ -321,8 +319,9 @@ with tgb.Page() as page:
 
             # ---- Модалки админ-панели (поверх контента; только админам) ----
             # tgb.dialog оверлеит весь контент через портал и не сдвигает то, что
-            # ниже. Закрытие — крестик окна → close_admin_dialog. Все действия —
-            # заглушки (бэкенд готовит модуль `user`).
+            # ниже. Закрытие — крестик окна → close_admin_dialog. Список/Создать/
+            # Удалить связаны с data/login_logic.py; «Роль» — заглушка (функции
+            # смены роли в бэкенде нет).
             with tgb.part(render="{is_admin}"):
                 with tgb.dialog(open="{show_admin_users}", on_action=close_admin_dialog,
                                 close_label="Закрыть", width="440px"):

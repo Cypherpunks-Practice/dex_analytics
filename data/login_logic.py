@@ -69,6 +69,7 @@ class user:
             
             if not user_exists:
                 cursor.execute(f'INSERT INTO logins VALUES ("{login}", x\'{password_hash}\', {is_admin})')
+                connection.commit()
                 connection.close()
                 return True
             else:
@@ -85,8 +86,9 @@ class user:
         if self.is_admin == 1:
             connection = sqlite3.connect('logins.db')
             cursor = connection.cursor()
-            cursor.execute(f'DELETE FROM login WHERE login = "{login}"')
-            deletions_counter = cursor.rowcount()
+            cursor.execute(f'DELETE FROM logins WHERE login = "{login}"')
+            deletions_counter = cursor.rowcount
+            connection.commit()
             connection.close()
             return deletions_counter
         else: return None
