@@ -38,7 +38,7 @@ def get_password_from_db(login):
     else:
         return password[0]
 
-class user:
+class User:
     is_admin = 0
     login = None
 
@@ -66,7 +66,7 @@ class user:
             cursor = connection.cursor()
             cursor.execute(f'SELECT * FROM logins WHERE login = "{login}"')
             user_exists = cursor.fetchone()
-            
+
             if not user_exists:
                 cursor.execute(f'INSERT INTO logins VALUES ("{login}", x\'{password_hash}\', {is_admin})')
                 connection.commit()
@@ -109,14 +109,14 @@ class user:
     
 
 
-""" #That's the test:
+'''#That's the log-in test:
 connection = sqlite3.connect('logins.db')
 cursor = connection.cursor()
 h = hashlib.sha256()
 t = 'test_password'
 h.update(t.encode('utf-8'))
 hash_ = h.hexdigest()
-#cursor.execute(f'INSERT INTO logins VALUES ("test_login", x\'{hash_}\', {False})')
+cursor.execute(f'INSERT INTO logins VALUES ("test_login", x\'{hash_}\', {False})')
 connection.commit()
 cursor.execute(f'SELECT * FROM logins;')
 for i in cursor.fetchall():
@@ -127,6 +127,39 @@ h = hashlib.sha256()
 h.update(txt.encode('utf-8'))
 print(h.hexdigest())
 print(check_password('test_login', 'test_password'))
-print()
+print("(if 1 -> login succesfull)")
 connection.close()
-"""
+'''
+
+'''#that's the admin test
+connection = sqlite3.connect('logins.db')
+cursor = connection.cursor()
+h = hashlib.sha256()
+t = 'admin_password'
+h.update(t.encode('utf-8'))
+hash_ = h.hexdigest()
+cursor.execute(f'INSERT INTO logins VALUES ("admin_login", x\'{hash_}\', {True})')
+connection.commit()
+cursor.execute(f'SELECT * FROM logins;')
+for i in cursor.fetchall():
+    print(i)
+user = User("admin_login")
+print("\nAdmin adding user:")
+user.admin_add_user("new user", "new password", "False")
+cursor.execute(f'SELECT * FROM logins;')
+for i in cursor.fetchall():
+    print(i)
+
+print("\nAdmin checking users list:")
+print(user.admin_get_users_list())
+
+print("\nAdmin deleting user:")
+user.admin_delete_user("new user")
+cursor.execute(f'SELECT * FROM logins;')
+for i in cursor.fetchall():
+    print(i)
+
+user.admin_delete_user("admin_login")
+connection.commit()
+connection.close()
+'''
