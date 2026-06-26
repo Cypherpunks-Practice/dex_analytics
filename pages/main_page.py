@@ -21,7 +21,17 @@ from callbacks import (
     add_exclude_trade_shark,
     add_include_shark,
     add_pool,
+    admin_create,
+    admin_delete,
+    admin_demote,
+    admin_promote,
+    close_admin_dialog,
+    logout,
     on_change_refresh,
+    open_admin_create,
+    open_admin_delete,
+    open_admin_role,
+    open_admin_users,
     rebuild_area1,
     rebuild_pie,
     remove_exclude_pool_shark,
@@ -49,6 +59,32 @@ exclude_trade_shark_input = ""
 pools: list[str] = []
 pool_input = ""
 pools_mode = config.POOL_MODES[config.DEFAULT_POOL_MODE]
+
+# Логин пользователя. Заглушка: реальное значение даст будущий модуль `user`
+# (авторизация в разработке). Тогда сюда придёт логин из сессии.
+user_login = "demo_user"
+
+# --- Админ-панель (фронт-заглушки; бэкенд — будущий модуль `user`) -----------
+# Флаг админа. Заглушка: реальное значение даст будущий модуль `user`.
+# У не-админа админ-панель и её модалки не рендерятся (render="{is_admin}").
+is_admin = True
+# Видимость модалок админ-панели.
+show_admin_users = False
+show_admin_create = False
+show_admin_delete = False
+show_admin_role = False
+# Поля форм админ-панели.
+admin_create_login = ""
+admin_create_password = ""
+admin_create_role = "Юзер"
+admin_delete_login = ""
+admin_role_login = ""
+admin_role_lov = ["Юзер", "Админ"]
+# Заглушка списка юзеров (потом заменит выборка из модуля `user`).
+admin_users = pd.DataFrame({
+    "Логин": ["demo_user", "admin", "alice", "bob"],
+    "Роль":  ["Юзер", "Админ", "Юзер", "Юзер"],
+})
 
 # Топ-50: разрез (пулы/игроки) + на сколько частей делить графики (2..50).
 top_dimension = config.TOP_DIMENSION[config.DEFAULT_TOP_DIMENSION]
@@ -268,6 +304,56 @@ with tgb.Page() as page:
 
         # ========================= Основной контент =========================
         with tgb.part(class_name="content"):
+
+            # ---- Верхняя строка: админ-панель (слева) + логин/выход (справа) ----
+            # Логин — из заглушки user_login (будущий модуль `user`); кнопка
+            # «Выйти» висит на колбэке-заглушке logout. Админ-панель (ряд кнопок)
+            # рендерится только админам (render="{is_admin}", тоже заглушка).
+            with tgb.part(class_name="topbar"):
+                with tgb.part(render="{is_admin}", class_name="admin-bar"):
+                    tgb.button("Список", on_action=open_admin_users, class_name="admin-btn")
+                    tgb.button("Создать", on_action=open_admin_create, class_name="admin-btn")
+                    tgb.button("Удалить", on_action=open_admin_delete, class_name="admin-btn")
+                    tgb.button("Роль", on_action=open_admin_role, class_name="admin-btn")
+                with tgb.part(class_name="user-box"):
+                    tgb.text("{user_login}", class_name="user-login")
+                    tgb.button("Выйти", on_action=logout, class_name="logout-btn")
+
+            # ---- Модалки админ-панели (поверх контента; только админам) ----
+            # tgb.dialog оверлеит весь контент через портал и не сдвигает то, что
+            # ниже. Закрытие — крестик окна → close_admin_dialog. Все действия —
+            # заглушки (бэкенд готовит модуль `user`).
+            with tgb.part(render="{is_admin}"):
+                with tgb.dialog(open="{show_admin_users}", on_action=close_admin_dialog,
+                                close_label="Закрыть", width="440px"):
+                    with tgb.part(class_name="admin-dialog"):
+                        tgb.text("### Пользователи", mode="md")
+                        tgb.table(data="{admin_users}", page_size=10)
+                with tgb.dialog(open="{show_admin_create}", on_action=close_admin_dialog,
+                                close_label="Закрыть", width="360px"):
+                    with tgb.part(class_name="admin-dialog"):
+                        tgb.text("### Создать пользователя", mode="md")
+                        tgb.input(value="{admin_create_login}", label="Логин")
+                        tgb.input(value="{admin_create_password}", label="Пароль", password=True)
+                        tgb.toggle(value="{admin_create_role}", lov=admin_role_lov)
+                        tgb.button("Создать", on_action=admin_create, class_name="admin-action-btn")
+                with tgb.dialog(open="{show_admin_delete}", on_action=close_admin_dialog,
+                                close_label="Закрыть", width="360px"):
+                    with tgb.part(class_name="admin-dialog"):
+                        tgb.text("### Удалить пользователя", mode="md")
+                        tgb.input(value="{admin_delete_login}", label="Логин")
+                        tgb.button("Удалить", on_action=admin_delete,
+                                   class_name="admin-action-btn danger")
+                with tgb.dialog(open="{show_admin_role}", on_action=close_admin_dialog,
+                                close_label="Закрыть", width="380px"):
+                    with tgb.part(class_name="admin-dialog"):
+                        tgb.text("### Управление ролью", mode="md")
+                        tgb.input(value="{admin_role_login}", label="Логин")
+                        with tgb.layout("1fr 1fr"):
+                            tgb.button("Назначить админом", on_action=admin_promote,
+                                       class_name="admin-action-btn")
+                            tgb.button("Снять админа", on_action=admin_demote,
+                                       class_name="admin-action-btn")
 
             # --------------------------- Топ-50 ---------------------------
             with tgb.part(id="sec-top"):

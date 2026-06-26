@@ -304,6 +304,74 @@ def toggle_sidebar(state):
     state.sidebar_open = not state.sidebar_open
 
 
+def logout(state):
+    """Заглушка выхода из системы. Реальная авторизация/выход — в будущем
+    модуле `user` (в разработке). Сейчас только интерфейс, без функционала."""
+    # TODO: интеграция с модулем авторизации `user`.
+    pass
+
+
+# --- Админ-панель (фронт-заглушки; бэкенд — будущий модуль `user`) -----------
+def open_admin_users(state):
+    """Открыть модалку со списком пользователей."""
+    state.show_admin_users = True
+
+
+def open_admin_create(state):
+    """Открыть модалку создания пользователя."""
+    state.show_admin_create = True
+
+
+def open_admin_delete(state):
+    """Открыть модалку удаления пользователя."""
+    state.show_admin_delete = True
+
+
+def open_admin_role(state):
+    """Открыть модалку управления ролью."""
+    state.show_admin_role = True
+
+
+def close_admin_dialog(state, id=None, payload=None):
+    """Закрыть любую модалку админ-панели (вешается на on_action — крестик).
+
+    Одновременно открыта максимум одна, поэтому просто гасим все флаги.
+    """
+    state.show_admin_users = False
+    state.show_admin_create = False
+    state.show_admin_delete = False
+    state.show_admin_role = False
+
+
+def admin_create(state):
+    """Заглушка создания пользователя. Реальное создание — в модуле `user`."""
+    # TODO: интеграция с модулем `user` (создать логин/пароль с ролью).
+    state.admin_create_login = ""
+    state.admin_create_password = ""
+    state.show_admin_create = False
+
+
+def admin_delete(state):
+    """Заглушка удаления пользователя по логину."""
+    # TODO: интеграция с модулем `user` (удалить по логину).
+    state.admin_delete_login = ""
+    state.show_admin_delete = False
+
+
+def admin_promote(state):
+    """Заглушка назначения роли админа по логину."""
+    # TODO: интеграция с модулем `user` (назначить роль админа).
+    state.admin_role_login = ""
+    state.show_admin_role = False
+
+
+def admin_demote(state):
+    """Заглушка снятия роли админа по логину."""
+    # TODO: интеграция с модулем `user` (снять роль админа).
+    state.admin_role_login = ""
+    state.show_admin_role = False
+
+
 def toggle_metric(state, id):
     """Развернуть/свернуть строку метрики и пересчитать её график."""
     key = id.split("metric_", 1)[1]
