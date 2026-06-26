@@ -23,7 +23,6 @@ _REF_KEY = {v: k for k, v in config.TREND_REFERENCES.items()}
 _METRIC_KEY = {v: k for k, v in config.TREND_METRICS.items()}
 _GROUP_KEY = {v: k for k, v in config.TREND_GROUP_BY.items()}
 _DIM_KEY = {v: k for k, v in config.TOP_DIMENSION.items()}
-_EXCLUDE_MODE_KEY = {v: k for k, v in config.EXCLUDE_PLAYER_MODES.items()}
 _POOL_MODE_KEY = {v: k for k, v in config.POOL_MODES.items()}
 
 # Заголовок графика filled area секции Топ-50 — по разрезу.
@@ -44,14 +43,15 @@ def _fmt(value) -> str:
 def get_filters(state) -> dict:
     """Собрать словарь фильтров из текущего состояния.
 
-    Два отдельных списка игроков: `include_sharks` (поле «Включить», всегда
-    include) и `exclude_sharks` (поле «Исключить», режим из тоггла exclude_mode).
+    Три отдельных списка игроков: `include_sharks` (поле «Включить», всегда
+    include), `exclude_pool_sharks` (поле «Исключить пулы игроков») и
+    `exclude_trade_sharks` (поле «Исключить сделки игроков»). Оба списка
+    исключения применяются одновременно и независимо.
     """
     return {
         "include_players": list(state.include_sharks),
-        "exclude_players": list(state.exclude_sharks),
-        "exclude_mode": _EXCLUDE_MODE_KEY.get(
-            state.exclude_mode, config.DEFAULT_EXCLUDE_PLAYER_MODE),
+        "exclude_pool_players": list(state.exclude_pool_sharks),
+        "exclude_trade_players": list(state.exclude_trade_sharks),
         "pools": list(state.pools),
         "pools_mode": _POOL_MODE_KEY.get(
             state.pools_mode, config.DEFAULT_POOL_MODE),
@@ -248,20 +248,37 @@ def remove_include_shark(state, id):
         refresh_all(state)
 
 
-def add_exclude_shark(state):
-    val = (state.exclude_shark_input or "").strip()
-    if val and val not in state.exclude_sharks:
-        state.exclude_sharks = state.exclude_sharks + [val]
-    state.exclude_shark_input = ""
+def add_exclude_pool_shark(state):
+    val = (state.exclude_pool_shark_input or "").strip()
+    if val and val not in state.exclude_pool_sharks:
+        state.exclude_pool_sharks = state.exclude_pool_sharks + [val]
+    state.exclude_pool_shark_input = ""
     refresh_all(state)
 
 
-def remove_exclude_shark(state, id):
+def remove_exclude_pool_shark(state, id):
     i = int(id.rsplit("_", 1)[1])
-    lst = list(state.exclude_sharks)
+    lst = list(state.exclude_pool_sharks)
     if 0 <= i < len(lst):
         del lst[i]
-        state.exclude_sharks = lst
+        state.exclude_pool_sharks = lst
+        refresh_all(state)
+
+
+def add_exclude_trade_shark(state):
+    val = (state.exclude_trade_shark_input or "").strip()
+    if val and val not in state.exclude_trade_sharks:
+        state.exclude_trade_sharks = state.exclude_trade_sharks + [val]
+    state.exclude_trade_shark_input = ""
+    refresh_all(state)
+
+
+def remove_exclude_trade_shark(state, id):
+    i = int(id.rsplit("_", 1)[1])
+    lst = list(state.exclude_trade_sharks)
+    if 0 <= i < len(lst):
+        del lst[i]
+        state.exclude_trade_sharks = lst
         refresh_all(state)
 
 

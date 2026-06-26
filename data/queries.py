@@ -150,12 +150,14 @@ def _scope(filters: dict, *, time_sql: str | None = None,
            apply_exclude: bool = True, apply_pools: bool = True):
     """Собрать WHERE по фильтрам игроков/пулов/времени и params для clickhouse-connect.
 
-    Два независимых списка игроков (см. config.EXCLUDE_PLAYER_MODES):
-      include_players — поле «Включить», всегда include: «пулы, в которых были эти
-                        игроки» (членство пула через подзапрос);
-      exclude_players — поле «Исключить», глобальное вычитание по exclude_mode:
-                        exclude_pools  → убрать целиком пулы этих игроков;
-                        exclude_trades → убрать только их сделки.
+    Три независимых списка игроков:
+      include_players       — поле «Включить», всегда include: «пулы, в которых
+                              были эти игроки» (членство пула через подзапрос);
+      exclude_pool_players  — поле «Исключить пулы игроков», глобальное вычитание:
+                              убрать целиком пулы этих игроков;
+      exclude_trade_players — поле «Исключить сделки игроков», глобальное
+                              вычитание: убрать только их сделки (пулы остаются).
+    Оба списка исключения применяются одновременно и независимо.
     Плюс фильтр пулов (`pools` / `pools_mode`: include = только, exclude = кроме).
 
     Членство пула (include и exclude_pools) считается в пределах того же окна
@@ -170,21 +172,22 @@ def _scope(filters: dict, *, time_sql: str | None = None,
                        нужно для «микро» и «ушли/зашли» (именно их сделки);
         "off"        — клаузулу include не добавлять (обогащённые таблицы и
                        «макро по игрокам» считают объём отдельно через -MergeIf).
-      apply_exclude=False — не добавлять вычитание exclude_players.
+      apply_exclude=False — не добавлять вычитание обоих списков исключения.
       apply_pools=False   — не добавлять клаузулу пулов (например, чтобы «общий
                             объём игрока» считался по всему рынку).
 
     Адреса нормализуются в нижний регистр; параметры названы раздельно
-    (`iplayers`/`xplayers`/`pools`), чтобы не конфликтовать при совмещении.
+    (`iplayers`/`xpoolplayers`/`xtradeplayers`/`pools`), чтобы не конфликтовать
+    при совмещении.
     Возвращает (where_sql, params); where == "1", если ограничений нет.
     """
     clauses: list[str] = []
     params: dict = {}
 
     iplayers = [p.strip().lower() for p in (filters.get("include_players") or []) if p.strip()]
-    xplayers = [p.strip().lower() for p in (filters.get("exclude_players") or []) if p.strip()]
+    xpool_players = [p.strip().lower() for p in (filters.get("exclude_pool_players") or []) if p.strip()]
+    xtrade_players = [p.strip().lower() for p in (filters.get("exclude_trade_players") or []) if p.strip()]
     pools = [p.strip().lower() for p in (filters.get("pools") or []) if p.strip()]
-    exclude_mode = filters.get("exclude_mode", config.DEFAULT_EXCLUDE_PLAYER_MODE)
     pools_mode = filters.get("pools_mode", config.DEFAULT_POOL_MODE)
 
     # Окно времени считаем заранее — оно же уходит внутрь подзапросов членства.
@@ -209,13 +212,15 @@ def _scope(filters: dict, *, time_sql: str | None = None,
                 "lower(mv.trader_address) IN (SELECT lower(contract_address) FROM traders)"
             )
 
-    # --- Исключить игроков (глобальное вычитание) ---
-    if apply_exclude and xplayers:
-        params["xplayers"] = xplayers
-        if exclude_mode == "exclude_trades":
-            clauses.append("NOT has({xplayers:Array(String)}, lower(mv.trader_address))")
-        else:  # exclude_pools — убрать целиком пулы этих игроков
-            clauses.append(f"mv.pool_address NOT IN ({_membership('xplayers')})")
+    # --- Исключить пулы игроков (убрать целиком их пулы) ---
+    if apply_exclude and xpool_players:
+        params["xpoolplayers"] = xpool_players
+        clauses.append(f"mv.pool_address NOT IN ({_membership('xpoolplayers')})")
+
+    # --- Исключить сделки игроков (убрать только их сделки) ---
+    if apply_exclude and xtrade_players:
+        params["xtradeplayers"] = xtrade_players
+        clauses.append("NOT has({xtradeplayers:Array(String)}, lower(mv.trader_address))")
 
     # --- Пулы ---
     if apply_pools and pools:
@@ -273,7 +278,7 @@ def get_top_pools(filters: dict):
     DataFrame[pool, player_vol, pool_total, share]: объём включённых игроков в
     пуле, общий объём пула (все трейдеры) и доля игроков в %. Оба числа считаются
     за один скан через комбинатор -MergeIf; HAVING оставляет только пулы, где эти
-    игроки реально торговали. Исключения (exclude_players) применяются и тут.
+    игроки реально торговали. Исключения (оба списка) применяются и тут.
     """
     if clickhouse.USE_STUB:
         return stubs.top_pools(config.TOP_POOLS_LIMIT)

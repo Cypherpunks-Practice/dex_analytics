@@ -17,13 +17,15 @@ from taipy.gui import builder as tgb
 # имени функции в пространстве имён модуля страницы, поэтому имена должны быть
 # доступны напрямую (а не как callbacks.add_include_shark).
 from callbacks import (
-    add_exclude_shark,
+    add_exclude_pool_shark,
+    add_exclude_trade_shark,
     add_include_shark,
     add_pool,
     on_change_refresh,
     rebuild_area1,
     rebuild_pie,
-    remove_exclude_shark,
+    remove_exclude_pool_shark,
+    remove_exclude_trade_shark,
     remove_include_shark,
     remove_pool,
     toggle_metric,
@@ -36,12 +38,14 @@ import config
 # ---------------------------------------------------------------------------
 # Фильтры
 time_range = config.TIME_RANGES[config.DEFAULT_TIME_RANGE]
-# Два отдельных поля игроков: «Включить» (без режима) и «Исключить» (тоггл).
+# Три отдельных поля игроков: «Включить» (без режима) и два поля исключения
+# без тоггла — «Исключить пулы игроков» и «Исключить сделки игроков».
 include_sharks: list[str] = []
 include_shark_input = ""
-exclude_sharks: list[str] = []
-exclude_shark_input = ""
-exclude_mode = config.EXCLUDE_PLAYER_MODES[config.DEFAULT_EXCLUDE_PLAYER_MODE]
+exclude_pool_sharks: list[str] = []
+exclude_pool_shark_input = ""
+exclude_trade_sharks: list[str] = []
+exclude_trade_shark_input = ""
 pools: list[str] = []
 pool_input = ""
 pools_mode = config.POOL_MODES[config.DEFAULT_POOL_MODE]
@@ -105,7 +109,6 @@ ref_lov = list(config.TREND_REFERENCES.values())
 metric_lov = list(config.TREND_METRICS.values())
 group_lov = list(config.TREND_GROUP_BY.values())
 dimension_lov = list(config.TOP_DIMENSION.values())
-exclude_mode_lov = list(config.EXCLUDE_PLAYER_MODES.values())
 pools_mode_lov = list(config.POOL_MODES.values())
 
 # Максимум чипсов-слотов, отрисовываемых для каждого фильтра.
@@ -211,21 +214,36 @@ with tgb.Page() as page:
                             on_action=remove_include_shark,
                         )
 
-            # --- Фильтр: ИСКЛЮЧИТЬ игроков (режим: их пулы / их сделки) ---
-            tgb.text("#### Исключить игроков", mode="md")
-            tgb.toggle(value="{exclude_mode}", lov=exclude_mode_lov,
-                       on_change=on_change_refresh, class_name="mode-toggle")
+            # --- Фильтр: ИСКЛЮЧИТЬ ПУЛЫ игроков (убрать целиком их пулы) ---
+            tgb.text("#### Исключить пулы игроков", mode="md")
+            tgb.text("_убрать целиком пулы этих адресов_", mode="md", class_name="hint")
             with tgb.layout("1fr auto", class_name="add-row"):
-                tgb.input(value="{exclude_shark_input}", label="0x… адрес",
-                          on_action=add_exclude_shark)
-                tgb.button("＋", on_action=add_exclude_shark, class_name="add-btn")
+                tgb.input(value="{exclude_pool_shark_input}", label="0x… адрес",
+                          on_action=add_exclude_pool_shark)
+                tgb.button("＋", on_action=add_exclude_pool_shark, class_name="add-btn")
             with tgb.part(class_name="chips"):
                 for _i in range(MAX_CHIPS):
-                    with tgb.part(render="{len(exclude_sharks) > %d}" % _i, class_name="chip"):
+                    with tgb.part(render="{len(exclude_pool_sharks) > %d}" % _i, class_name="chip"):
                         tgb.button(
-                            "{chip_label(exclude_sharks, %d)}" % _i,
-                            id="exc_chip_%d" % _i,
-                            on_action=remove_exclude_shark,
+                            "{chip_label(exclude_pool_sharks, %d)}" % _i,
+                            id="excp_chip_%d" % _i,
+                            on_action=remove_exclude_pool_shark,
+                        )
+
+            # --- Фильтр: ИСКЛЮЧИТЬ СДЕЛКИ игроков (убрать только их сделки) ---
+            tgb.text("#### Исключить сделки игроков", mode="md")
+            tgb.text("_убрать только сделки этих адресов_", mode="md", class_name="hint")
+            with tgb.layout("1fr auto", class_name="add-row"):
+                tgb.input(value="{exclude_trade_shark_input}", label="0x… адрес",
+                          on_action=add_exclude_trade_shark)
+                tgb.button("＋", on_action=add_exclude_trade_shark, class_name="add-btn")
+            with tgb.part(class_name="chips"):
+                for _i in range(MAX_CHIPS):
+                    with tgb.part(render="{len(exclude_trade_sharks) > %d}" % _i, class_name="chip"):
+                        tgb.button(
+                            "{chip_label(exclude_trade_sharks, %d)}" % _i,
+                            id="exct_chip_%d" % _i,
+                            on_action=remove_exclude_trade_shark,
                         )
 
             # --- Фильтр: пулы ---
