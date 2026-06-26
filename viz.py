@@ -25,7 +25,7 @@ _LAYOUT = dict(
     legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),  
     height=370,
     
-    hovermode="x unified",
+    hovermode="x unified",  #Добавлена spike line
     
     xaxis=dict(
         showspikes=True,

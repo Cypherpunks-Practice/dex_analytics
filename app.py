@@ -24,12 +24,18 @@ from data import clickhouse
 # должны существовать здесь, в __main__.
 from pages.main_page import *  # noqa: F401,F403
 from pages.main_page import page
-
+from pages.login_page import *  # noqa: F401,F403
+from pages.login_page import login_page
 # Множество идентификаторов подключённых клиентов (для автообновления).
 _clients: set[str] = set()
 
-gui = Gui(pages={"/": page}, css_file="assets/main.css")
-
+gui = Gui(
+    pages={
+        "/": login_page,
+        "dashboard": page,
+    },
+    css_file="assets/main.css",
+)
 
 def on_init(state):
     """Регистрируем клиента и делаем первичную загрузку данных."""
