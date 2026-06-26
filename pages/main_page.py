@@ -26,6 +26,7 @@ from callbacks import (
     admin_demote,
     admin_promote,
     close_admin_dialog,
+    login,
     logout,
     on_change_refresh,
     open_admin_create,
@@ -60,14 +61,21 @@ pools: list[str] = []
 pool_input = ""
 pools_mode = config.POOL_MODES[config.DEFAULT_POOL_MODE]
 
-# Логин пользователя. Заглушка: реальное значение даст будущий модуль `user`
-# (авторизация в разработке). Тогда сюда придёт логин из сессии.
-user_login = "demo_user"
+# --- Сессия / авторизация ---------------------------------------------------
+# Одна страница: карточка входа (render="{not logged_in}") и дашборд
+# (render="{logged_in}") взаимно скрыты. callbacks.login переключает logged_in и
+# наполняет user_login/is_admin; навигации нет.
+logged_in = False
+username = ""        # поле «Логин» карточки входа
+password = ""        # поле «Пароль» карточки входа
+# Логин вошедшего пользователя (показывается в правом верхнем углу). Пусто до входа.
+user_login = ""
 
 # --- Админ-панель (связана с бэкендом data/login_logic.py) -------------------
-# Флаг видимости панели. Пока фронт-гейт (заглушка): его выставит логин-флоу из
-# роли вошедшего. Сами операции авторизует бэкенд (admin_* → None не-админу).
-is_admin = True
+# Флаг видимости панели. Начально False — выставляется при входе из роли
+# вошедшего (callbacks.login → get_is_admin_from_db). Сами операции дополнительно
+# авторизует бэкенд (admin_* → None не-админу).
+is_admin = False
 # Видимость модалок админ-панели.
 show_admin_users = False
 show_admin_create = False
@@ -201,9 +209,20 @@ def card_3_pressed(state):
 # Сборка страницы
 # ---------------------------------------------------------------------------
 with tgb.Page() as page:
+
+    # ---------- Карточка входа (видна, пока не авторизован) ----------
+    with tgb.part(render="{not logged_in}", class_name="login-page"):
+        with tgb.part(class_name="login-card"):
+            tgb.text("# ChainBI", mode="md")
+            tgb.input(value="{username}", label="Логин", on_action=login)
+            tgb.input(value="{password}", label="Пароль", password=True,
+                      on_action=login)
+            tgb.button("Войти", on_action=login)
+
     # Гибкая «оболочка»: первый столбец — панель (узкая полоска ИЛИ полная),
     # второй — контент, который сам подстраивается под свободное место.
-    with tgb.part(class_name="shell"):
+    # Виден только после входа (render="{logged_in}").
+    with tgb.part(render="{logged_in}", class_name="shell"):
 
         # ---------- Свёрнутая панель: узкая полоска со стрелкой > ----------
         with tgb.part(render="{not sidebar_open}", class_name="rail"):
@@ -447,10 +466,3 @@ with tgb.Page() as page:
                         tgb.chart(figure="{fig_heatmap2}")
                 with tgb.part(class_name="card"):
                     tgb.chart(figure="{fig_area2}")
-
-
-logged_in = False
-
-def on_navigate(state, page):
-    if page == "dashboard" and not state.logged_in:
-        return "/"

@@ -17,7 +17,11 @@ from taipy.gui import notify
 import config
 import viz
 from data import queries
-from data.login_logic import user as auth_user
+from data.login_logic import (
+    User as auth_user,
+    check_password,
+    get_is_admin_from_db,
+)
 
 # Реверс-словари: подпись -> внутренний ключ.
 _TIME_KEY = {v: k for k, v in config.TIME_RANGES.items()}
@@ -306,11 +310,33 @@ def toggle_sidebar(state):
     state.sidebar_open = not state.sidebar_open
 
 
+def login(state):
+    """Авторизация: проверить логин/пароль, при успехе наполнить сессию
+    (logged_in / user_login / is_admin). Дашборд показывается реактивно
+    (render="{logged_in}"), навигации нет; иначе — тост."""
+    login_name = (state.username or "").strip()
+    password = state.password or ""
+    if not login_name or not password:
+        notify(state, "warning", "Введите логин и пароль")
+        return
+    if check_password(login_name, password) == 1:
+        state.logged_in = True
+        state.user_login = login_name
+        state.is_admin = bool(get_is_admin_from_db(login_name))
+        state.password = ""                # не держим пароль в состоянии
+    else:
+        state.password = ""
+        notify(state, "error", "Неверный логин или пароль")
+
+
 def logout(state):
-    """Заглушка выхода из системы. Реальная авторизация/выход — в будущем
-    модуле `user` (в разработке). Сейчас только интерфейс, без функционала."""
-    # TODO: интеграция с модулем авторизации `user`.
-    pass
+    """Выход: очистить сессию. Карточка входа возвращается реактивно
+    (render="{not logged_in}"), навигации нет."""
+    state.logged_in = False
+    state.is_admin = False
+    state.user_login = ""
+    state.username = ""
+    state.password = ""
 
 
 # --- Админ-панель (связана с бэкендом data/login_logic.py) -------------------

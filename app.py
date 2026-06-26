@@ -24,16 +24,13 @@ from data import clickhouse
 # должны существовать здесь, в __main__.
 from pages.main_page import *  # noqa: F401,F403
 from pages.main_page import page
-from pages.login_page import *  # noqa: F401,F403
-from pages.login_page import login_page
 # Множество идентификаторов подключённых клиентов (для автообновления).
 _clients: set[str] = set()
 
+# Одна страница: карточка входа и дашборд внутри неё переключаются через
+# render="{logged_in}" (см. pages/main_page.py). Отдельного маршрута/навигации нет.
 gui = Gui(
-    pages={
-        "/": login_page,
-        "dashboard": page,
-    },
+    pages={"/": page},
     css_file="assets/main.css",
 )
 
