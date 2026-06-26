@@ -2,253 +2,256 @@
 
 /* --- Оболочка: панель (полоска/панель) + адаптивный контент ----------- */
 .shell {
-    display: flex;
-    align-items: stretch;
-    gap: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
 }
 
 /* Свёрнутая панель — узкая вертикальная полоска со стрелкой. */
 .rail {
-    flex: 0 0 70px;
-    width: 70px;
-    box-sizing: border-box;
-    background: #f5f7fa;
-    border-right: 1px solid #e2e8f0;
-    position: sticky;
-    top: 0;
-    align-self: flex-start;
-    height: 100vh;
-    display: flex;
-    justify-content: center;
-    padding-top: 10px;
+  flex: 0 0 70px;
+  width: 70px;
+  box-sizing: border-box;
+  background: #f5f7fa;
+  border-right: 1px solid #e2e8f0;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding-top: 10px;
 }
 
 /* Развёрнутая панель — фиксированной ширины, прокручивается отдельно. */
 .sidebar {
-    flex: 0 0 280px;
-    width: 280px;
-    box-sizing: border-box;
-    padding: 12px 16px 16px;
-    background: #f5f7fa;
-    border-right: 1px solid #e2e8f0;
-    position: sticky;
-    top: 0;
-    align-self: flex-start;
-    max-height: 100vh;
-    overflow-y: auto;
+  flex: 0 0 280px;
+  width: 280px;
+  box-sizing: border-box;
+  padding: 12px 16px 16px;
+  background: #f5f7fa;
+  border-right: 1px solid #e2e8f0;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  max-height: 100vh;
+  overflow-y: auto;
 }
 
 .sidebar-head {
-    display: flex;
-    justify-content: flex-end;
+  display: flex;
+  justify-content: flex-end;
 }
 
 /* Кнопки-стрелки сворачивания/разворачивания. */
 .rail-btn button,
 .collapse-btn button {
-    background: #2563eb;
-    color: #fff ;
-    border: none;
-    border-radius: 6px;
-    width: 30px;
-    height: 30px;
-    line-height: 1;
-    font-size: 1rem;
-    cursor: pointer;
-    padding: 0;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  width: 30px;
+  height: 30px;
+  line-height: 1;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0;
 }
 
 .rail-btn button:hover,
 .collapse-btn button:hover {
-    background: #1d4ed8 ;
+  background: #1d4ed8;
 }
 
 .sidebar h1 {
-    margin: 0;
-    font-size: 1.6rem;
+  margin: 0;
+  font-size: 1.6rem;
 }
 
 .sidebar .subtitle {
-    color: #64748b;
-    font-size: 0.85rem;
-    margin-bottom: 8px;
+  color: #64748b;
+  font-size: 0.85rem;
+  margin-bottom: 8px;
 }
 
 .sidebar a {
-    display: block;
-    padding: 2px 0;
-    color: #2563eb;
-    text-decoration: none;
+  display: block;
+  padding: 2px 0;
+  color: #2563eb;
+  text-decoration: none;
 }
 
 .sidebar a:hover {
-    text-decoration: underline;
+  text-decoration: underline;
 }
 
 .hint {
-    color: #94a3b8;
-    font-size: 0.8rem;
+  color: #94a3b8;
+  font-size: 0.8rem;
 }
 
 .add-row {
-    align-items: center;
-    gap: 6px;
+  align-items: center;
+  gap: 6px;
 }
 
 .add-btn {
-    min-width: 36px;
+  min-width: 36px;
 }
 
 /* --- Чипсы фильтров (chip = part c render, внутри кнопка-«✕») ---------- */
 .chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin: 8px 0 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 4px;
 }
 
 .chip {
-    display: inline-flex;
+  display: inline-flex;
 }
 
 .chip button {
-    background: #e0e7ff;
-    color: #3730a3;
-    border-radius: 14px;
-    border: none;
-    padding: 2px 10px;
-    font-size: 0.78rem;
-    cursor: pointer;
-    white-space: nowrap;
+  background: #e0e7ff;
+  color: #3730a3;
+  border-radius: 14px;
+  border: none;
+  padding: 2px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .chip button:hover {
-    background: #c7d2fe ;
+  background: #c7d2fe;
 }
 
 .refresh-btn {
-    margin-top: 12px;
-    width: 100%;
+  margin-top: 12px;
+  width: 100%;
 }
 
 /* --- Контент: занимает всё свободное место и адаптируется ------------- */
 .content {
-    flex: 1 1 auto;
-    min-width: 0;
-    padding: 16px 24px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 16px 24px;
 }
 
 .cards {
-    gap: 16px;
-    align-items: stretch;
+  gap: 16px;
+  align-items: stretch;
 }
 
 .cards2 {
-    display: grid;
-    grid-template-columns: 1fr 3fr;
-    grid-template-rows: 1fr 1fr;
-    gap: 16px;
-    align-items: stretch;
+  display: grid;
+  grid-template-columns: 1fr 3fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 16px;
+  align-items: stretch;
 }
 
 .top_card {
-    background: #ffffff;
-    height: 100%;
-    aspect-ratio: 1 / 1;
-    grid-column: 1;
-    grid-row: 1;
-    border-radius: 10px;
-    padding: 0;
-    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
-    box-sizing: border-box;
-    position: relative;
-    overflow: hidden;
-    display: flex; 
-    flex-direction: column;
+  background: #ffffff;
+  height: 100%;
+  aspect-ratio: 1 / 1;
+  grid-column: 1;
+  grid-row: 1;
+  border-radius: 10px;
+  padding: 0;
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .main_card {
-    background: #ffffff; 
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    border-radius: 10px;
-    padding: 0;
-    /*border: 1px solid hsl(20, 100%, 50%);*/
-    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
-    box-sizing: border-box;
-    position: relative;
-    overflow: hidden;
-    align-items: center; 
-    justify-content: center; 
+  background: #ffffff;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  border-radius: 10px;
+  padding: 0;
+  /*border: 1px solid hsl(20, 100%, 50%);*/
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
+  align-items: center;
+  justify-content: center;
 }
 
 .bottom_card {
-    background: #ffffff; 
-    height: 100%;
-    aspect-ratio: 1 / 1;
-    grid-column: 1;
-    grid-row: 2; 
-    border-radius: 10px;
-    padding: 0;
-    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
-    position: relative;
-    overflow: hidden;
-    box-sizing: border-box;
-    display: flex; 
-    flex-direction: column;
+  background: #ffffff;
+  height: 100%;
+  aspect-ratio: 1 / 1;
+  grid-column: 1;
+  grid-row: 2;
+  border-radius: 10px;
+  padding: 0;
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .click-layer {
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    
-    background: transparent;
-    border: none;
-    padding: 0;
-    margin: 0;
-    outline: none;
-    cursor: pointer;
-    
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 10;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  outline: none;
+  cursor: pointer;
+
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
 }
 
 .main_card .click-layer {
-    display: none;
+  display: none;
 }
- .chart {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0 !important;
-    margin: 0 !important;
-    align-items: center;
-    justify-content: center;
+.chart {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 !important;
+  margin: 0 !important;
+  align-items: center;
+  justify-content: center;
 }
-
 
 .top_card .chart,
 .bottom_card .chart {
-    height: 200px;
-} 
+  height: 200px;
+}
 
 .main_card .chart {
-    height: 450px;
+  height: 450px;
 }
 
 .chart .main-svg {
-    width: 100% !important;
-    height: 100% !important;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .chart .layer-below {
-    width: 100% !important;
-    height: 100% !important;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .chart,
@@ -256,84 +259,101 @@
 .chart .js-plotly-plot,
 .chart svg,
 .chart .plotly-graph-div {
-    box-shadow: none !important;
-    filter: none !important;
+  box-shadow: none !important;
+  filter: none !important;
 }
 
 .taipy-table,
 .taipy-table-container,
 .table-container,
 .MuiPaper-root {
-    box-shadow: none !important;
-    border: none !important;
+  box-shadow: none !important;
+  border: none !important;
 }
 
 /* Ползунок «на сколько частей делить» над графиком в карточке. */
 .parts-ctl {
-    margin-bottom: 10px;
-    margin: 0 auto 10px auto;
-    width: fit-content; 
+  margin-bottom: 10px;
+  margin: 0 auto 10px auto;
+  width: fit-content;
 }
 
 .parts-ctl .hint {
-    margin: 0 0 2px;
+  margin: 0 0 2px;
 }
 
 .card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    padding: 12px 16px;
-    margin-bottom: 16px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 /* --- Строки метрик анализа рынка -------------------------------------- */
 .metric-row {
-    align-items: center;
-    border-bottom: 1px solid #f1f5f9;
-    padding: 2px 0;
+  align-items: center;
+  border-bottom: 1px solid #f1f5f9;
+  padding: 2px 0;
 }
 
 .metric-btn button {
-    background: transparent;
-    border: none;
-    text-align: left;
-    width: 100%;
-    padding: 8px 4px;
-    cursor: pointer;
-    font-size: 0.95rem;
-    color: #0f172a;
+  background: transparent;
+  border: none;
+  text-align: left;
+  width: 100%;
+  padding: 8px 4px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  color: #0f172a;
 }
 
 .metric-btn button:hover {
-    background: #f8fafc;
+  background: #f8fafc;
 }
 
 .metric-val {
-    font-weight: 600;
-    text-align: right;
-    color: #0f766e;
-    white-space: nowrap;
+  font-weight: 600;
+  text-align: right;
+  color: #0f766e;
+  white-space: nowrap;
 }
 
 .metric-detail {
-    padding: 8px 0 16px;
+  padding: 8px 0 16px;
 }
 
 .trend-controls {
-    gap: 16px;
-    margin-bottom: 12px;
+  gap: 16px;
+  margin-bottom: 12px;
 }
 
 .link-btn button {
-    background: transparent;
-    border: none;
-    color: #2563eb;
-    cursor: pointer;
-    padding: 6px 0;
+  background: transparent;
+  border: none;
+  color: #2563eb;
+  cursor: pointer;
+  padding: 6px 0;
 }
 
 .link-btn button:hover {
-    text-decoration: underline;
+  text-decoration: underline;
+}
+/* ================= LOGIN ================= */
+
+.login-page {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background: linear-gradient(135deg, #0f172a, #2563eb);
+}
+
+.login-card {
+  width: 400px;
+  padding: 40px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
 }
