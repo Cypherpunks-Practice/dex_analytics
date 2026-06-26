@@ -99,6 +99,25 @@
   min-width: 36px;
 }
 
+.mode-toggle {
+    display: flex;
+    width: 100%;
+    margin: 2px 0 8px;
+}
+
+.mode-toggle .MuiToggleButtonGroup-root {
+    display: flex;
+    width: 100%;
+}
+
+.mode-toggle .MuiToggleButton-root {
+    flex: 1 1 0;
+    font-size: 0.72rem;
+    line-height: 1.1;
+    padding: 3px 4px;
+    text-transform: none;
+}
+
 /* --- Чипсы фильтров (chip = part c render, внутри кнопка-«✕») ---------- */
 .chips {
   display: flex;
@@ -152,6 +171,23 @@
 }
 
 .top_card {
+<<<<<<< HEAD
+    background: #ffffff;
+    height: 100%;
+    aspect-ratio: 1 / 1;
+    grid-column: 1;
+    grid-row: 1;
+    border-radius: 10px;
+    padding: 0;
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
+    box-sizing: border-box;
+    position: relative;
+    overflow: hidden;
+    display: flex; 
+    flex-direction: column;
+    align-items: center; 
+    justify-content: center; 
+=======
   background: #ffffff;
   height: 100%;
   aspect-ratio: 1 / 1;
@@ -167,6 +203,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
+>>>>>>> origin/pamela
 }
 
 .main_card {
@@ -185,6 +222,23 @@
 }
 
 .bottom_card {
+<<<<<<< HEAD
+    background: #ffffff; 
+    height: 100%;
+    aspect-ratio: 1 / 1;
+    grid-column: 1;
+    grid-row: 2; 
+    border-radius: 10px;
+    padding: 0;
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
+    position: relative;
+    overflow: hidden;
+    box-sizing: border-box;
+    display: flex; 
+    flex-direction: column;
+    align-items: center; 
+    justify-content: center;
+=======
   background: #ffffff;
   height: 100%;
   aspect-ratio: 1 / 1;
@@ -200,6 +254,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
+>>>>>>> origin/pamela
 }
 
 .click-layer {
@@ -356,4 +411,98 @@
   background: white;
   border-radius: 16px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+}
+
+/* --- Верхняя строка: админ-панель (слева) + блок пользователя (справа) - */
+.topbar {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.user-box {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    /* Всегда прижимать блок логина вправо, даже если админ-бар не отрисован. */
+    margin-left: auto;
+}
+
+.user-login {
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.logout-btn button {
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 4px 12px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.logout-btn button:hover {
+    background: #1d4ed8;
+}
+
+/* --- Админ-панель: ряд компактных кнопок + модалки -------------------- */
+.admin-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.admin-btn button {
+    background: #e0e7ff;
+    color: #3730a3;
+    border: none;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.admin-btn button:hover {
+    background: #c7d2fe;
+}
+
+/* Содержимое модалки админ-панели: вертикальная форма с отступами. */
+.admin-dialog {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px 2px 8px;
+    min-width: 280px;
+}
+
+.admin-dialog input {
+    width: 100%;
+}
+
+/* Основная кнопка действия внутри модалки (синяя; .danger — красная). */
+.admin-action-btn button {
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 14px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.admin-action-btn button:hover {
+    background: #1d4ed8;
+}
+
+.admin-action-btn.danger button {
+    background: #dc2626;
+}
+
+.admin-action-btn.danger button:hover {
+    background: #b91c1c;
 }

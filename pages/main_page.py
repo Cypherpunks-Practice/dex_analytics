@@ -15,15 +15,30 @@ from taipy.gui import builder as tgb
 
 # Импортируем колбэки голыми именами: Taipy резолвит on_action/on_change по
 # имени функции в пространстве имён модуля страницы, поэтому имена должны быть
-# доступны напрямую (а не как callbacks.add_shark).
+# доступны напрямую (а не как callbacks.add_include_shark).
 from callbacks import (
+    add_exclude_pool_shark,
+    add_exclude_trade_shark,
+    add_include_shark,
     add_pool,
-    add_shark,
+    admin_create,
+    admin_delete,
+    admin_demote,
+    admin_promote,
+    close_admin_dialog,
+    login,
+    logout,
     on_change_refresh,
+    open_admin_create,
+    open_admin_delete,
+    open_admin_role,
+    open_admin_users,
     rebuild_area1,
     rebuild_pie,
+    remove_exclude_pool_shark,
+    remove_exclude_trade_shark,
+    remove_include_shark,
     remove_pool,
-    remove_shark,
     toggle_metric,
     toggle_sidebar,
 )
@@ -34,10 +49,48 @@ import config
 # ---------------------------------------------------------------------------
 # Фильтры
 time_range = config.TIME_RANGES[config.DEFAULT_TIME_RANGE]
-sharks: list[str] = []
-shark_input = ""
+# Три отдельных поля игроков: «Включить» (без режима) и два поля исключения
+# без тоггла — «Исключить пулы игроков» и «Исключить сделки игроков».
+include_sharks: list[str] = []
+include_shark_input = ""
+exclude_pool_sharks: list[str] = []
+exclude_pool_shark_input = ""
+exclude_trade_sharks: list[str] = []
+exclude_trade_shark_input = ""
 pools: list[str] = []
 pool_input = ""
+pools_mode = config.POOL_MODES[config.DEFAULT_POOL_MODE]
+
+# --- Сессия / авторизация ---------------------------------------------------
+# Одна страница: карточка входа (render="{not logged_in}") и дашборд
+# (render="{logged_in}") взаимно скрыты. callbacks.login переключает logged_in и
+# наполняет user_login/is_admin; навигации нет.
+logged_in = False
+username = ""        # поле «Логин» карточки входа
+password = ""        # поле «Пароль» карточки входа
+# Логин вошедшего пользователя (показывается в правом верхнем углу). Пусто до входа.
+user_login = ""
+
+# --- Админ-панель (связана с бэкендом data/login_logic.py) -------------------
+# Флаг видимости панели. Начально False — выставляется при входе из роли
+# вошедшего (callbacks.login → get_is_admin_from_db). Сами операции дополнительно
+# авторизует бэкенд (admin_* → None не-админу).
+is_admin = False
+# Видимость модалок админ-панели.
+show_admin_users = False
+show_admin_create = False
+show_admin_delete = False
+show_admin_role = False
+# Поля форм админ-панели.
+admin_create_login = ""
+admin_create_password = ""
+admin_create_role = "Юзер"
+admin_delete_login = ""
+admin_role_login = ""
+admin_role_lov = ["Юзер", "Админ"]
+# Список юзеров: пустой до открытия модалки — наполняется из БД
+# (callbacks._load_admin_users при open_admin_users).
+admin_users = pd.DataFrame({"Логин": [], "Роль": []})
 
 # Топ-50: разрез (пулы/игроки) + на сколько частей делить графики (2..50).
 top_dimension = config.TOP_DIMENSION[config.DEFAULT_TOP_DIMENSION]
@@ -76,6 +129,7 @@ sidebar_open = True
 # Данные таблиц (пустые до on_init)
 _empty_df = pd.DataFrame()
 data_top50 = _empty_df
+data_top50_pie = _empty_df       # 2-колоночный срез [entity, volume] для пирога
 data_area1 = _empty_df          # широкий df filled area 1 — режется ползунком
 data_pools_left = _empty_df
 data_pools_entered = _empty_df
@@ -86,7 +140,8 @@ fig_area1 = go.Figure()
 fig_area2 = go.Figure()
 fig_heatmap1 = go.Figure()
 fig_heatmap2 = go.Figure()
-fig_daily = go.Figure()
+fig_daily_micro = go.Figure()
+fig_daily_macro = go.Figure()
 fig_metric_ts = go.Figure()
 fig_metric_pair = go.Figure()
 
@@ -96,6 +151,7 @@ ref_lov = list(config.TREND_REFERENCES.values())
 metric_lov = list(config.TREND_METRICS.values())
 group_lov = list(config.TREND_GROUP_BY.values())
 dimension_lov = list(config.TOP_DIMENSION.values())
+pools_mode_lov = list(config.POOL_MODES.values())
 
 # Максимум чипсов-слотов, отрисовываемых для каждого фильтра.
 MAX_CHIPS = 15
@@ -153,9 +209,20 @@ def card_3_pressed(state):
 # Сборка страницы
 # ---------------------------------------------------------------------------
 with tgb.Page() as page:
+
+    # ---------- Карточка входа (видна, пока не авторизован) ----------
+    with tgb.part(render="{not logged_in}", class_name="login-page"):
+        with tgb.part(class_name="login-card"):
+            tgb.text("# ChainBI", mode="md")
+            tgb.input(value="{username}", label="Логин", on_action=login)
+            tgb.input(value="{password}", label="Пароль", password=True,
+                      on_action=login)
+            tgb.button("Войти", on_action=login)
+
     # Гибкая «оболочка»: первый столбец — панель (узкая полоска ИЛИ полная),
     # второй — контент, который сам подстраивается под свободное место.
-    with tgb.part(class_name="shell"):
+    # Виден только после входа (render="{logged_in}").
+    with tgb.part(render="{logged_in}", class_name="shell"):
 
         # ---------- Свёрнутая панель: узкая полоска со стрелкой > ----------
         with tgb.part(render="{not sidebar_open}", class_name="rail"):
@@ -165,15 +232,15 @@ with tgb.Page() as page:
         with tgb.part(render="{sidebar_open}", class_name="sidebar"):
             with tgb.part(class_name="sidebar-head"):
                 tgb.button("❮", on_action=toggle_sidebar, class_name="collapse-btn")
-            tgb.text("# ChainBI", mode="md")
-            tgb.text("Аналитика DEX: акулы и кит", mode="md", class_name="subtitle")
+            # tgb.text("# ChainBI", mode="md")
+            # tgb.text("Аналитика DEX: акулы и кит", mode="md", class_name="subtitle")
 
             tgb.text("#### Навигация", mode="md")
             tgb.html("a", "Топ-50", href="#sec-top")
             tgb.html("a", "Анализ рынка", href="#sec-market")
             tgb.html("a", "Анализ тренда", href="#sec-trend")
 
-            tgb.text("#### Топ-50: разрез", mode="md")
+            tgb.text("#### Топ-50", mode="md")
             tgb.toggle(value="{top_dimension}", lov=dimension_lov, on_change=on_change_refresh)
 
             tgb.text("#### Временной диапазон", mode="md")
@@ -182,25 +249,62 @@ with tgb.Page() as page:
                 on_change=on_change_refresh,
             )
 
-            # --- Фильтр: акулы ---
-            tgb.text("#### Адреса акул / кита", mode="md")
+            # --- Фильтр: ВКЛЮЧИТЬ игроков (без режима — всегда «их пулы») ---
+            tgb.text("#### Включить игроков", mode="md")
+            # tgb.text("_аналитика пулов, где были эти адреса_", mode="md", class_name="hint")
             with tgb.layout("1fr auto", class_name="add-row"):
-                tgb.input(value="{shark_input}", label="0x… адрес", on_action=add_shark)
-                tgb.button("＋", on_action=add_shark, class_name="add-btn")
+                tgb.input(value="{include_shark_input}", label="0x… адрес",
+                          on_action=add_include_shark)
+                tgb.button("＋", on_action=add_include_shark, class_name="add-btn")
             # Чип-слоты обёрнуты в part с render: у button нет свойства render,
             # поэтому пустые слоты гасятся именно на уровне part.
             with tgb.part(class_name="chips"):
                 for _i in range(MAX_CHIPS):
-                    with tgb.part(render="{len(sharks) > %d}" % _i, class_name="chip"):
+                    with tgb.part(render="{len(include_sharks) > %d}" % _i, class_name="chip"):
                         tgb.button(
-                            "{chip_label(sharks, %d)}" % _i,
-                            id="shark_chip_%d" % _i,
-                            on_action=remove_shark,
+                            "{chip_label(include_sharks, %d)}" % _i,
+                            id="inc_chip_%d" % _i,
+                            on_action=remove_include_shark,
+                        )
+
+            # --- Фильтр: ИСКЛЮЧИТЬ ПУЛЫ игроков (убрать целиком их пулы) ---
+            tgb.text("#### Исключить пулы игроков", mode="md")
+            # tgb.text("_убрать целиком пулы этих адресов_", mode="md", class_name="hint")
+            with tgb.layout("1fr auto", class_name="add-row"):
+                tgb.input(value="{exclude_pool_shark_input}", label="0x… адрес",
+                          on_action=add_exclude_pool_shark)
+                tgb.button("＋", on_action=add_exclude_pool_shark, class_name="add-btn")
+            with tgb.part(class_name="chips"):
+                for _i in range(MAX_CHIPS):
+                    with tgb.part(render="{len(exclude_pool_sharks) > %d}" % _i, class_name="chip"):
+                        tgb.button(
+                            "{chip_label(exclude_pool_sharks, %d)}" % _i,
+                            id="excp_chip_%d" % _i,
+                            on_action=remove_exclude_pool_shark,
+                        )
+
+            # --- Фильтр: ИСКЛЮЧИТЬ СДЕЛКИ игроков (убрать только их сделки) ---
+            tgb.text("#### Исключить сделки игроков", mode="md")
+            # tgb.text("_убрать только сделки этих адресов_", mode="md", class_name="hint")
+            with tgb.layout("1fr auto", class_name="add-row"):
+                tgb.input(value="{exclude_trade_shark_input}", label="0x… адрес",
+                          on_action=add_exclude_trade_shark)
+                tgb.button("＋", on_action=add_exclude_trade_shark, class_name="add-btn")
+            with tgb.part(class_name="chips"):
+                for _i in range(MAX_CHIPS):
+                    with tgb.part(render="{len(exclude_trade_sharks) > %d}" % _i, class_name="chip"):
+                        tgb.button(
+                            "{chip_label(exclude_trade_sharks, %d)}" % _i,
+                            id="exct_chip_%d" % _i,
+                            on_action=remove_exclude_trade_shark,
                         )
 
             # --- Фильтр: пулы ---
             tgb.text("#### Адреса пулов", mode="md")
-            tgb.text("_пусто = весь рынок_", mode="md", class_name="hint")
+            # tgb.text("_пусто = весь рынок_", mode="md", class_name="hint")
+            # Режим: «Только» выбранные / «Кроме» выбранных.
+            tgb.toggle(value="{pools_mode}", lov=pools_mode_lov,
+                       on_change=on_change_refresh, class_name="mode-toggle")
             with tgb.layout("1fr auto", class_name="add-row"):
                 tgb.input(value="{pool_input}", label="0x… адрес пула", on_action=add_pool)
                 tgb.button("＋", on_action=add_pool, class_name="add-btn")
@@ -217,6 +321,57 @@ with tgb.Page() as page:
 
         # ========================= Основной контент =========================
         with tgb.part(class_name="content"):
+
+            # ---- Верхняя строка: админ-панель (слева) + логин/выход (справа) ----
+            # Логин — из user_login (его выставит логин-флоу); кнопка «Выйти» —
+            # колбэк-заглушка logout. Админ-панель (ряд кнопок) рендерится только
+            # админам (render="{is_admin}" — пока фронт-гейт).
+            with tgb.part(class_name="topbar"):
+                with tgb.part(render="{is_admin}", class_name="admin-bar"):
+                    tgb.button("Список", on_action=open_admin_users, class_name="admin-btn")
+                    tgb.button("Создать", on_action=open_admin_create, class_name="admin-btn")
+                    tgb.button("Удалить", on_action=open_admin_delete, class_name="admin-btn")
+                    tgb.button("Роль", on_action=open_admin_role, class_name="admin-btn")
+                with tgb.part(class_name="user-box"):
+                    tgb.text("{user_login}", class_name="user-login")
+                    tgb.button("Выйти", on_action=logout, class_name="logout-btn")
+
+            # ---- Модалки админ-панели (поверх контента; только админам) ----
+            # tgb.dialog оверлеит весь контент через портал и не сдвигает то, что
+            # ниже. Закрытие — крестик окна → close_admin_dialog. Список/Создать/
+            # Удалить связаны с data/login_logic.py; «Роль» — заглушка (функции
+            # смены роли в бэкенде нет).
+            with tgb.part(render="{is_admin}"):
+                with tgb.dialog(open="{show_admin_users}", on_action=close_admin_dialog,
+                                close_label="Закрыть", width="440px"):
+                    with tgb.part(class_name="admin-dialog"):
+                        tgb.text("### Пользователи", mode="md")
+                        tgb.table(data="{admin_users}", page_size=10)
+                with tgb.dialog(open="{show_admin_create}", on_action=close_admin_dialog,
+                                close_label="Закрыть", width="360px"):
+                    with tgb.part(class_name="admin-dialog"):
+                        tgb.text("### Создать пользователя", mode="md")
+                        tgb.input(value="{admin_create_login}", label="Логин")
+                        tgb.input(value="{admin_create_password}", label="Пароль", password=True)
+                        tgb.toggle(value="{admin_create_role}", lov=admin_role_lov)
+                        tgb.button("Создать", on_action=admin_create, class_name="admin-action-btn")
+                with tgb.dialog(open="{show_admin_delete}", on_action=close_admin_dialog,
+                                close_label="Закрыть", width="360px"):
+                    with tgb.part(class_name="admin-dialog"):
+                        tgb.text("### Удалить пользователя", mode="md")
+                        tgb.input(value="{admin_delete_login}", label="Логин")
+                        tgb.button("Удалить", on_action=admin_delete,
+                                   class_name="admin-action-btn danger")
+                with tgb.dialog(open="{show_admin_role}", on_action=close_admin_dialog,
+                                close_label="Закрыть", width="380px"):
+                    with tgb.part(class_name="admin-dialog"):
+                        tgb.text("### Управление ролью", mode="md")
+                        tgb.input(value="{admin_role_login}", label="Логин")
+                        with tgb.layout("1fr 1fr"):
+                            tgb.button("Назначить админом", on_action=admin_promote,
+                                       class_name="admin-action-btn")
+                            tgb.button("Снять админа", on_action=admin_demote,
+                                       class_name="admin-action-btn")
 
             # --------------------------- Топ-50 ---------------------------
             with tgb.part(id="sec-top"):
@@ -259,7 +414,7 @@ with tgb.Page() as page:
                     value="{market_pair}", label="Пара для группировки (пусто = общие данные)",
                     on_change=on_change_refresh, change_delay=600,
                 )
-                tgb.text("_Клик по строке — график динамики по времени._", mode="md", class_name="hint")
+                # tgb.text("_Клик по строке — график динамики по времени._", mode="md", class_name="hint")
 
                 with tgb.part(class_name="card"):
                     for _key, _label in config.MARKET_METRICS.items():
@@ -301,7 +456,9 @@ with tgb.Page() as page:
                                   rebuild=True, page_size=7)
 
                 with tgb.part(class_name="card"):
-                    tgb.chart(figure="{fig_daily}")
+                    tgb.chart(figure="{fig_daily_micro}")
+                with tgb.part(class_name="card"):
+                    tgb.chart(figure="{fig_daily_macro}")
                 with tgb.layout("1fr 1fr", class_name="cards"):
                     with tgb.part(class_name="card"):
                         tgb.chart(figure="{fig_heatmap1}")
@@ -309,12 +466,3 @@ with tgb.Page() as page:
                         tgb.chart(figure="{fig_heatmap2}")
                 with tgb.part(class_name="card"):
                     tgb.chart(figure="{fig_area2}")
-
-
-
-logged_in = False
-
-def on_navigate(state, page):
-    if page == "dashboard" and not state.logged_in:
-        return "/"
-
