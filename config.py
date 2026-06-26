@@ -84,7 +84,7 @@ DEFAULT_TOP_DIMENSION = "pool"
 # key -> подпись строки. По клику раскрывается график динамики по этому ключу.
 MARKET_METRICS = {
     "trade_volume": "Объём сделок",
-    "bribe_volume": "Объём брайба",
+    "bribe_volume": "Объём брайба (wei)",
     "avg_size": "Средний объём сделки",
     "median_size": "Медианный объём сделки",
     "max_size": "Максимальный объём сделки",
