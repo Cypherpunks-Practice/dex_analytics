@@ -179,8 +179,8 @@ with tgb.Page() as page:
         with tgb.part(render="{sidebar_open}", class_name="sidebar"):
             with tgb.part(class_name="sidebar-head"):
                 tgb.button("❮", on_action=toggle_sidebar, class_name="collapse-btn")
-            tgb.text("# ChainBI", mode="md")
-            tgb.text("Аналитика DEX: акулы и кит", mode="md", class_name="subtitle")
+            # tgb.text("# ChainBI", mode="md")
+            # tgb.text("Аналитика DEX: акулы и кит", mode="md", class_name="subtitle")
 
             tgb.text("#### Навигация", mode="md")
             tgb.html("a", "Топ-50", href="#sec-top")
@@ -198,7 +198,7 @@ with tgb.Page() as page:
 
             # --- Фильтр: ВКЛЮЧИТЬ игроков (без режима — всегда «их пулы») ---
             tgb.text("#### Включить игроков", mode="md")
-            tgb.text("_аналитика пулов, где были эти адреса_", mode="md", class_name="hint")
+            # tgb.text("_аналитика пулов, где были эти адреса_", mode="md", class_name="hint")
             with tgb.layout("1fr auto", class_name="add-row"):
                 tgb.input(value="{include_shark_input}", label="0x… адрес",
                           on_action=add_include_shark)
@@ -216,7 +216,7 @@ with tgb.Page() as page:
 
             # --- Фильтр: ИСКЛЮЧИТЬ ПУЛЫ игроков (убрать целиком их пулы) ---
             tgb.text("#### Исключить пулы игроков", mode="md")
-            tgb.text("_убрать целиком пулы этих адресов_", mode="md", class_name="hint")
+            # tgb.text("_убрать целиком пулы этих адресов_", mode="md", class_name="hint")
             with tgb.layout("1fr auto", class_name="add-row"):
                 tgb.input(value="{exclude_pool_shark_input}", label="0x… адрес",
                           on_action=add_exclude_pool_shark)
@@ -232,7 +232,7 @@ with tgb.Page() as page:
 
             # --- Фильтр: ИСКЛЮЧИТЬ СДЕЛКИ игроков (убрать только их сделки) ---
             tgb.text("#### Исключить сделки игроков", mode="md")
-            tgb.text("_убрать только сделки этих адресов_", mode="md", class_name="hint")
+            # tgb.text("_убрать только сделки этих адресов_", mode="md", class_name="hint")
             with tgb.layout("1fr auto", class_name="add-row"):
                 tgb.input(value="{exclude_trade_shark_input}", label="0x… адрес",
                           on_action=add_exclude_trade_shark)
@@ -248,7 +248,7 @@ with tgb.Page() as page:
 
             # --- Фильтр: пулы ---
             tgb.text("#### Адреса пулов", mode="md")
-            tgb.text("_пусто = весь рынок_", mode="md", class_name="hint")
+            # tgb.text("_пусто = весь рынок_", mode="md", class_name="hint")
             # Режим: «Только» выбранные / «Кроме» выбранных.
             tgb.toggle(value="{pools_mode}", lov=pools_mode_lov,
                        on_change=on_change_refresh, class_name="mode-toggle")
@@ -310,7 +310,7 @@ with tgb.Page() as page:
                     value="{market_pair}", label="Пара для группировки (пусто = общие данные)",
                     on_change=on_change_refresh, change_delay=600,
                 )
-                tgb.text("_Клик по строке — график динамики по времени._", mode="md", class_name="hint")
+                # tgb.text("_Клик по строке — график динамики по времени._", mode="md", class_name="hint")
 
                 with tgb.part(class_name="card"):
                     for _key, _label in config.MARKET_METRICS.items():
