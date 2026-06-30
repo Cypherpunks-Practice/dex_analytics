@@ -317,7 +317,7 @@ with tgb.Page() as page:
                             on_action=remove_pool,
                         )
 
-            tgb.button("⟳ Обновить", on_action=on_change_refresh, class_name="refresh-btn")
+            # tgb.button("⟳ Обновить", on_action=on_change_refresh, class_name="refresh-btn")
 
         # ========================= Основной контент =========================
         with tgb.part(class_name="content"):
@@ -331,7 +331,7 @@ with tgb.Page() as page:
                     tgb.button("Список", on_action=open_admin_users, class_name="admin-btn")
                     tgb.button("Создать", on_action=open_admin_create, class_name="admin-btn")
                     tgb.button("Удалить", on_action=open_admin_delete, class_name="admin-btn")
-                    tgb.button("Роль", on_action=open_admin_role, class_name="admin-btn")
+                    # tgb.button("Роль", on_action=open_admin_role, class_name="admin-btn")
                 with tgb.part(class_name="user-box"):
                     tgb.text("{user_login}", class_name="user-login")
                     tgb.button("Выйти", on_action=logout, class_name="logout-btn")
@@ -362,16 +362,16 @@ with tgb.Page() as page:
                         tgb.input(value="{admin_delete_login}", label="Логин")
                         tgb.button("Удалить", on_action=admin_delete,
                                    class_name="admin-action-btn danger")
-                with tgb.dialog(open="{show_admin_role}", on_action=close_admin_dialog,
-                                close_label="Закрыть", width="380px"):
-                    with tgb.part(class_name="admin-dialog"):
-                        tgb.text("### Управление ролью", mode="md")
-                        tgb.input(value="{admin_role_login}", label="Логин")
-                        with tgb.layout("1fr 1fr"):
-                            tgb.button("Назначить админом", on_action=admin_promote,
-                                       class_name="admin-action-btn")
-                            tgb.button("Снять админа", on_action=admin_demote,
-                                       class_name="admin-action-btn")
+                # with tgb.dialog(open="{show_admin_role}", on_action=close_admin_dialog,
+                #                 close_label="Закрыть", width="380px"):
+                #     with tgb.part(class_name="admin-dialog"):
+                #         tgb.text("### Управление ролью", mode="md")
+                #         tgb.input(value="{admin_role_login}", label="Логин")
+                #         with tgb.layout("1fr 1fr"):
+                #             tgb.button("Назначить админом", on_action=admin_promote,
+                #                        class_name="admin-action-btn")
+                #             tgb.button("Снять админа", on_action=admin_demote,
+                #                        class_name="admin-action-btn")
 
             # --------------------------- Топ-50 ---------------------------
             with tgb.part(id="sec-top"):

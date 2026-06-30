@@ -27,7 +27,9 @@ except ImportError:
     pass
 
 # Переключатель источника данных. False → реальная БД, True → заглушки.
-USE_STUB = False
+# Можно переопределить через переменную окружения USE_STUB (напр. для смоук-теста
+# контейнера без доступа к БД): USE_STUB=true. По умолчанию — реальная БД.
+USE_STUB = os.getenv("USE_STUB", "false").lower() in ("1", "true", "yes")
 
 # Параметры подключения (можно переопределить через переменные окружения / .env).
 CLICKHOUSE_HOST = os.getenv("CH_HOST", "localhost")

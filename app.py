@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 
@@ -62,4 +63,7 @@ if __name__ == "__main__":
         title="ChainBI — DEX Analytics",
         dark_mode=False,
         use_reloader=False,
+        # В контейнере слушаем 0.0.0.0 (через ENV TAIPY_HOST), локально — 127.0.0.1.
+        host=os.getenv("TAIPY_HOST", "127.0.0.1"),
+        port=int(os.getenv("TAIPY_PORT", "5000")),
     )
