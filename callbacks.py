@@ -12,10 +12,16 @@
 from __future__ import annotations
 
 import pandas as pd
+from taipy.gui import notify
 
 import config
 import viz
 from data import queries
+from data.login_logic import (
+    User as auth_user,
+    check_password,
+    get_is_admin_from_db,
+)
 
 # Реверс-словари: подпись -> внутренний ключ.
 _TIME_KEY = {v: k for k, v in config.TIME_RANGES.items()}
@@ -302,6 +308,150 @@ def remove_pool(state, id):
 def toggle_sidebar(state):
     """Свернуть/развернуть боковую панель вручную (по стрелке)."""
     state.sidebar_open = not state.sidebar_open
+
+
+def login(state):
+    """Авторизация: проверить логин/пароль, при успехе наполнить сессию
+    (logged_in / user_login / is_admin). Дашборд показывается реактивно
+    (render="{logged_in}"), навигации нет; иначе — тост."""
+    login_name = (state.username or "").strip()
+    password = state.password or ""
+    if not login_name or not password:
+        notify(state, "warning", "Введите логин и пароль")
+        return
+    if check_password(login_name, password) == 1:
+        state.logged_in = True
+        state.user_login = login_name
+        state.is_admin = bool(get_is_admin_from_db(login_name))
+        state.password = ""                # не держим пароль в состоянии
+    else:
+        state.password = ""
+        notify(state, "error", "Неверный логин или пароль")
+
+
+def logout(state):
+    """Выход: очистить сессию. Карточка входа возвращается реактивно
+    (render="{not logged_in}"), навигации нет."""
+    state.logged_in = False
+    state.is_admin = False
+    state.user_login = ""
+    state.username = ""
+    state.password = ""
+
+
+# --- Админ-панель (связана с бэкендом data/login_logic.py) -------------------
+# Текущий логин берём из state.user_login; авторизацию операций обеспечивает сам
+# бэкенд (методы admin_* возвращают None не-админу). Смены роли в бэкенде нет —
+# «Роль» остаётся заглушкой.
+def _current_user(state):
+    """Бэкенд-объект текущего пользователя для админ-методов login_logic.
+
+    Текущий логин — state.user_login (его выставит будущий логин-флоу).
+    """
+    return auth_user(state.user_login)
+
+
+def _load_admin_users(state):
+    """Перечитать список юзеров из БД в state.admin_users (DataFrame Логин|Роль)."""
+    rows = _current_user(state).admin_get_users_list()  # None если не админ
+    if not rows:
+        state.admin_users = pd.DataFrame({"Логин": [], "Роль": []})
+        return
+    state.admin_users = pd.DataFrame({
+        "Логин": [r[0] for r in rows],
+        "Роль":  ["Админ" if r[1] else "Юзер" for r in rows],
+    })
+
+
+def open_admin_users(state):
+    """Открыть модалку со списком пользователей (подгрузив актуальный список)."""
+    _load_admin_users(state)
+    state.show_admin_users = True
+
+
+def open_admin_create(state):
+    """Открыть модалку создания пользователя."""
+    state.show_admin_create = True
+
+
+def open_admin_delete(state):
+    """Открыть модалку удаления пользователя."""
+    state.show_admin_delete = True
+
+
+def open_admin_role(state):
+    """Открыть модалку управления ролью."""
+    state.show_admin_role = True
+
+
+def close_admin_dialog(state, id=None, payload=None):
+    """Закрыть любую модалку админ-панели (вешается на on_action — крестик).
+
+    Одновременно открыта максимум одна, поэтому просто гасим все флаги.
+    """
+    state.show_admin_users = False
+    state.show_admin_create = False
+    state.show_admin_delete = False
+    state.show_admin_role = False
+
+
+def admin_create(state):
+    """Создать пользователя через бэкенд login_logic.admin_add_user."""
+    login = (state.admin_create_login or "").strip()
+    password = state.admin_create_password or ""
+    is_admin = 1 if state.admin_create_role == "Админ" else 0
+    if not login or not password:
+        notify(state, "warning", "Укажите логин и пароль")
+        return
+    result = _current_user(state).admin_add_user(login, password, is_admin)
+    if result is None:
+        notify(state, "error", "Недостаточно прав (не админ)")
+    elif result is False:
+        notify(state, "error", f"Пользователь «{login}» уже существует")
+    else:
+        notify(state, "success", f"Пользователь «{login}» создан")
+        _load_admin_users(state)
+    state.admin_create_login = ""
+    state.admin_create_password = ""
+    state.show_admin_create = False
+
+
+def admin_delete(state):
+    """Удалить пользователя по логину через login_logic.admin_delete_user."""
+    login = (state.admin_delete_login or "").strip()
+    if not login:
+        notify(state, "warning", "Укажите логин")
+        return
+    try:
+        result = _current_user(state).admin_delete_user(login)
+    except Exception as exc:  # на случай блокировки БД и т.п.
+        notify(state, "error", f"Ошибка удаления: {exc}")
+        return
+    if result is None:
+        notify(state, "error", "Недостаточно прав (не админ)")
+    elif result:
+        notify(state, "success", f"Удалено пользователей: {result}")
+        _load_admin_users(state)
+    else:
+        notify(state, "warning", f"Пользователь «{login}» не найден")
+    state.admin_delete_login = ""
+    state.show_admin_delete = False
+
+
+def admin_promote(state):
+    """Назначение роли админа — заглушка (функции нет в бэкенде)."""
+    # TODO: добавить смену роли в login_logic, затем связать.
+    notify(state, "info", "Смена роли пока недоступна: нет функции в бэкенде")
+    state.admin_role_login = ""
+    state.show_admin_role = False
+
+
+def admin_demote(state):
+    """Снятие роли админа — заглушка (функции нет в бэкенде)."""
+    # TODO: добавить смену роли в login_logic, затем связать.
+    notify(state, "info", "Смена роли пока недоступна: нет функции в бэкенде")
+    state.admin_role_login = ""
+    state.show_admin_role = False
 
 
 def toggle_metric(state, id):

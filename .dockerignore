@@ -1,0 +1,43 @@
+# --- Виртуальные окружения (огромные, не нужны в образе) ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Git ---
+.git/
+.gitignore
+
+# --- Python кэши ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# --- Секреты: подаются в рантайме через env_file, в образ не кладём ---
+.env
+.env.*
+!.env.example
+
+# --- Taipy runtime ---
+.taipy/
+user_data/
+taipy.log
+*.log
+
+# --- Claude Code / документация (в образе не нужны) ---
+.claude/
+CLAUDE.md
+*.md
+
+# --- IDE / редакторы ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- Локальные данные ClickHouse / архивы ---
+ch_data/
+ch_user_files/
+*.zip

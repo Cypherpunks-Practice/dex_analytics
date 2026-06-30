@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    image: chainbi-dashboard
+    container_name: chainbi
+    restart: unless-stopped
+    env_file: .env                  # CH_HOST/CH_PORT/CH_USER/CH_PASSWORD/CH_DB → в окружение контейнера
+    ports:
+      - "${APP_PORT:-5000}:5000"    # порт публикации на хосте; внутри всегда 5000
+    volumes:
+      - ./logins.db:/app/logins.db  # bind-mount: рантайм-изменения юзеров живут на хосте
+    extra_hosts:
+      # Чтобы CH_HOST=host.docker.internal достучался до БД на хост-машине и на Linux
+      # (на Docker Desktop работает и без этого). Для удалённого CH-сервера не мешает.
+      - "host.docker.internal:host-gateway"

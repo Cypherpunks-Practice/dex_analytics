@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 
@@ -24,12 +25,15 @@ from data import clickhouse
 # должны существовать здесь, в __main__.
 from pages.main_page import *  # noqa: F401,F403
 from pages.main_page import page
-
 # Множество идентификаторов подключённых клиентов (для автообновления).
 _clients: set[str] = set()
 
-gui = Gui(pages={"/": page}, css_file="assets/main.css")
-
+# Одна страница: карточка входа и дашборд внутри неё переключаются через
+# render="{logged_in}" (см. pages/main_page.py). Отдельного маршрута/навигации нет.
+gui = Gui(
+    pages={"/": page},
+    css_file="assets/main.css",
+)
 
 def on_init(state):
     """Регистрируем клиента и делаем первичную загрузку данных."""
@@ -59,4 +63,7 @@ if __name__ == "__main__":
         title="ChainBI — DEX Analytics",
         dark_mode=False,
         use_reloader=False,
+        # В контейнере слушаем 0.0.0.0 (через ENV TAIPY_HOST), локально — 127.0.0.1.
+        host=os.getenv("TAIPY_HOST", "127.0.0.1"),
+        port=int(os.getenv("TAIPY_PORT", "5000")),
     )
