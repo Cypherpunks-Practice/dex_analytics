@@ -44,6 +44,15 @@ from callbacks import (
 )
 import config
 
+
+def show_dashboard(state):
+    state.current_page = "dashboard"
+
+
+def show_signals(state):
+    state.current_page = "signals"
+
+
 # ---------------------------------------------------------------------------
 # Привязываемые переменные состояния (начальные значения)
 # ---------------------------------------------------------------------------
@@ -60,6 +69,10 @@ exclude_trade_shark_input = ""
 pools: list[str] = []
 pool_input = ""
 pools_mode = config.POOL_MODES[config.DEFAULT_POOL_MODE]
+
+# dashboard in current page
+current_page = "dashboard"
+
 
 # --- Сессия / авторизация ---------------------------------------------------
 # Одна страница: карточка входа (render="{not logged_in}") и дашборд
@@ -158,8 +171,46 @@ MAX_CHIPS = 15
 
 card1_class = "top_card"
 card2_class = "main_card"
-card3_class = "bottom_card"   
+card3_class = "bottom_card"
 
+# ---- Переменные для страницы Сигналы ----
+signals_full_data = _empty_df
+signals_display_data = _empty_df
+
+# Фильтры
+filter_status = "Все"
+filter_token = ""
+filter_min_volume = ""
+filter_max_volume = ""
+filter_time_range = config.TIME_RANGES[config.DEFAULT_TIME_RANGE]
+
+# Пагинация
+signals_page_size = 20
+signals_current_page = 1
+signals_total_pages = 1
+
+# Статистика
+signals_total = 0
+signals_covered = 0
+signals_uncovered = 0
+signals_coverage_rate = "0%"
+
+# Режим разработки (использовать mock-данные)
+use_mock_data = True
+# ---- Колонки для таблицы сигналов ----
+signals_columns = {
+    "signal_timestamp": {"index": 0, "title": "Время сигнала"},
+    "token_a": {"index": 1, "title": "Токен A"},
+    "token_b": {"index": 2, "title": "Токен B"},
+    "signal_amount": {"index": 3, "title": "Объём сигнала"},
+    "signal_bribe": {"index": 4, "title": "Bribe сигнала"},
+    "signal_fee": {"index": 5, "title": "Fee сигнала"},
+    "swap_timestamp": {"index": 6, "title": "Время сделки"},
+    "swap_amount": {"index": 7, "title": "Объём сделки"},
+    "swap_user_id": {"index": 8, "title": "ID пользователя"},
+    "swap_bribe": {"index": 9, "title": "Bribe сделки"},
+    "swap_fee": {"index": 10, "title": "Fee сделки"},
+}
 # ---------------------------------------------------------------------------
 # Хелперы для выражений шаблона
 # ---------------------------------------------------------------------------
@@ -186,6 +237,7 @@ def card_1_pressed(state):
         else:
             state.card3_class = buf
 
+
 def card_2_pressed(state):
     if(state.card2_class != "main_card"):
         buf = state.card2_class
@@ -195,6 +247,7 @@ def card_2_pressed(state):
         else:
             state.card3_class = buf
 
+
 def card_3_pressed(state):
     if(state.card3_class != "main_card"):
         buf = state.card3_class
@@ -203,6 +256,76 @@ def card_3_pressed(state):
             state.card2_class = buf
         else:
             state.card1_class = buf
+
+def load_signals_data(state):
+    """Загружает данные для страницы Сигналы."""
+    from data.mock_signals import get_mock_signals
+    
+    if state.use_mock_data:
+        state.signals_full_data = get_mock_signals(100)
+    else:
+        state.signals_full_data = _empty_df
+    
+    # Обновление статистики
+    if not state.signals_full_data.empty:
+        unique_signals = state.signals_full_data['signal_timestamp'].nunique()
+        covered_signals = state.signals_full_data[state.signals_full_data['swap_amount'].notna()]['signal_timestamp'].nunique()
+        
+        state.signals_total = unique_signals
+        state.signals_covered = covered_signals
+        state.signals_uncovered = unique_signals - covered_signals
+        state.signals_coverage_rate = f"{(covered_signals / unique_signals * 100):.1f}%" if unique_signals > 0 else "0%"
+        
+        state.signals_total_pages = (len(state.signals_full_data) + state.signals_page_size - 1) // state.signals_page_size
+        load_signals_page(state)
+
+def load_signals_page(state):
+    """Загружает одну страницу данных."""
+    if state.signals_full_data.empty:
+        state.signals_display_data = _empty_df
+        return
+    
+    start = (state.signals_current_page - 1) * state.signals_page_size
+    end = start + state.signals_page_size
+    state.signals_display_data = state.signals_full_data.iloc[start:end]
+
+def next_signals_page(state):
+    """Следующая страница."""
+    if state.signals_current_page < state.signals_total_pages:
+        state.signals_current_page += 1
+        load_signals_page(state)
+
+def prev_signals_page(state):
+    """Предыдущая страница."""
+    if state.signals_current_page > 1:
+        state.signals_current_page -= 1
+        load_signals_page(state)
+
+def reset_signals_filters(state):
+    """Сброс всех фильтров."""
+    state.filter_status = "Все"
+    state.filter_token = ""
+    state.filter_min_volume = ""
+    state.filter_max_volume = ""
+    state.filter_time_range = config.TIME_RANGES[config.DEFAULT_TIME_RANGE]
+    state.signals_current_page = 1
+    load_signals_data(state)
+
+def apply_signals_filters(state):
+    """Применяет фильтры (заглушка - пока просто перезагружает данные)."""
+    state.signals_current_page = 1
+    load_signals_data(state)
+
+def export_signals_csv(state):
+    """Экспорт в CSV (заглушка)."""
+    if state.signals_full_data.empty:
+        return
+    # TODO: реализовать экспорт CSV
+    pass
+
+def on_signal_row_click(state, action, info):
+    """Обработка клика по строке (заглушка)."""
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -219,10 +342,10 @@ with tgb.Page() as page:
                       on_action=login)
             tgb.button("Войти", on_action=login)
 
-    # Гибкая «оболочка»: первый столбец — панель (узкая полоска ИЛИ полная),
-    # второй — контент, который сам подстраивается под свободное место.
-    # Виден только после входа (render="{logged_in}").
-    with tgb.part(render="{logged_in}", class_name="shell"):
+    # ================================================================
+    # PAGE DASHBOARD (avec sidebar)
+    # ================================================================
+    with tgb.part(render="{logged_in and current_page == 'dashboard'}", class_name="shell"):
 
         # ---------- Свёрнутая панель: узкая полоска со стрелкой > ----------
         with tgb.part(render="{not sidebar_open}", class_name="rail"):
@@ -232,8 +355,6 @@ with tgb.Page() as page:
         with tgb.part(render="{sidebar_open}", class_name="sidebar"):
             with tgb.part(class_name="sidebar-head"):
                 tgb.button("❮", on_action=toggle_sidebar, class_name="collapse-btn")
-            # tgb.text("# ChainBI", mode="md")
-            # tgb.text("Аналитика DEX: акулы и кит", mode="md", class_name="subtitle")
 
             tgb.text("#### Навигация", mode="md")
             tgb.html("a", "Топ-50", href="#sec-top")
@@ -251,13 +372,10 @@ with tgb.Page() as page:
 
             # --- Фильтр: ВКЛЮЧИТЬ игроков (без режима — всегда «их пулы») ---
             tgb.text("#### Включить игроков", mode="md")
-            # tgb.text("_аналитика пулов, где были эти адреса_", mode="md", class_name="hint")
             with tgb.layout("1fr auto", class_name="add-row"):
                 tgb.input(value="{include_shark_input}", label="0x… адрес",
                           on_action=add_include_shark)
                 tgb.button("＋", on_action=add_include_shark, class_name="add-btn")
-            # Чип-слоты обёрнуты в part с render: у button нет свойства render,
-            # поэтому пустые слоты гасятся именно на уровне part.
             with tgb.part(class_name="chips"):
                 for _i in range(MAX_CHIPS):
                     with tgb.part(render="{len(include_sharks) > %d}" % _i, class_name="chip"):
@@ -269,7 +387,6 @@ with tgb.Page() as page:
 
             # --- Фильтр: ИСКЛЮЧИТЬ ПУЛЫ игроков (убрать целиком их пулы) ---
             tgb.text("#### Исключить пулы игроков", mode="md")
-            # tgb.text("_убрать целиком пулы этих адресов_", mode="md", class_name="hint")
             with tgb.layout("1fr auto", class_name="add-row"):
                 tgb.input(value="{exclude_pool_shark_input}", label="0x… адрес",
                           on_action=add_exclude_pool_shark)
@@ -285,7 +402,6 @@ with tgb.Page() as page:
 
             # --- Фильтр: ИСКЛЮЧИТЬ СДЕЛКИ игроков (убрать только их сделки) ---
             tgb.text("#### Исключить сделки игроков", mode="md")
-            # tgb.text("_убрать только сделки этих адресов_", mode="md", class_name="hint")
             with tgb.layout("1fr auto", class_name="add-row"):
                 tgb.input(value="{exclude_trade_shark_input}", label="0x… адрес",
                           on_action=add_exclude_trade_shark)
@@ -301,8 +417,6 @@ with tgb.Page() as page:
 
             # --- Фильтр: пулы ---
             tgb.text("#### Адреса пулов", mode="md")
-            # tgb.text("_пусто = весь рынок_", mode="md", class_name="hint")
-            # Режим: «Только» выбранные / «Кроме» выбранных.
             tgb.toggle(value="{pools_mode}", lov=pools_mode_lov,
                        on_change=on_change_refresh, class_name="mode-toggle")
             with tgb.layout("1fr auto", class_name="add-row"):
@@ -317,30 +431,25 @@ with tgb.Page() as page:
                             on_action=remove_pool,
                         )
 
-            # tgb.button("⟳ Обновить", on_action=on_change_refresh, class_name="refresh-btn")
-
-        # ========================= Основной контент =========================
+        # ========================= Основной контент Dashboard =========================
         with tgb.part(class_name="content"):
 
             # ---- Верхняя строка: админ-панель (слева) + логин/выход (справа) ----
-            # Логин — из user_login (его выставит логин-флоу); кнопка «Выйти» —
-            # колбэк-заглушка logout. Админ-панель (ряд кнопок) рендерится только
-            # админам (render="{is_admin}" — пока фронт-гейт).
             with tgb.part(class_name="topbar"):
+                with tgb.part(class_name="nav-bar"):
+                    tgb.button("Dashboard", on_action=show_dashboard, class_name="nav-btn active")
+                    tgb.button("Signals", on_action=show_signals, class_name="nav-btn")
+
                 with tgb.part(render="{is_admin}", class_name="admin-bar"):
                     tgb.button("Список", on_action=open_admin_users, class_name="admin-btn")
                     tgb.button("Создать", on_action=open_admin_create, class_name="admin-btn")
                     tgb.button("Удалить", on_action=open_admin_delete, class_name="admin-btn")
-                    # tgb.button("Роль", on_action=open_admin_role, class_name="admin-btn")
+                    
                 with tgb.part(class_name="user-box"):
                     tgb.text("{user_login}", class_name="user-login")
                     tgb.button("Выйти", on_action=logout, class_name="logout-btn")
 
             # ---- Модалки админ-панели (поверх контента; только админам) ----
-            # tgb.dialog оверлеит весь контент через портал и не сдвигает то, что
-            # ниже. Закрытие — крестик окна → close_admin_dialog. Список/Создать/
-            # Удалить связаны с data/login_logic.py; «Роль» — заглушка (функции
-            # смены роли в бэкенде нет).
             with tgb.part(render="{is_admin}"):
                 with tgb.dialog(open="{show_admin_users}", on_action=close_admin_dialog,
                                 close_label="Закрыть", width="440px"):
@@ -362,18 +471,8 @@ with tgb.Page() as page:
                         tgb.input(value="{admin_delete_login}", label="Логин")
                         tgb.button("Удалить", on_action=admin_delete,
                                    class_name="admin-action-btn danger")
-                # with tgb.dialog(open="{show_admin_role}", on_action=close_admin_dialog,
-                #                 close_label="Закрыть", width="380px"):
-                #     with tgb.part(class_name="admin-dialog"):
-                #         tgb.text("### Управление ролью", mode="md")
-                #         tgb.input(value="{admin_role_login}", label="Логин")
-                #         with tgb.layout("1fr 1fr"):
-                #             tgb.button("Назначить админом", on_action=admin_promote,
-                #                        class_name="admin-action-btn")
-                #             tgb.button("Снять админа", on_action=admin_demote,
-                #                        class_name="admin-action-btn")
 
-            # --------------------------- Топ-50 ---------------------------
+            # ---- Top-50 ----
             with tgb.part(id="sec-top"):
                 tgb.text("## Топ-50 — {top_dimension}", mode="md")
                 with tgb.layout("1fr 1fr", class_name="cards"):
@@ -407,14 +506,13 @@ with tgb.Page() as page:
                     tgb.table(data="{data_top50}", columns="{top_cols}", rebuild=True,
                               page_size=10, page_size_options=[10, 25, 50])
 
-            # ----------------------- Анализ рынка -----------------------
+            # ---- Анализ рынка ----
             with tgb.part(id="sec-market"):
                 tgb.text("## Анализ рынка", mode="md")
                 tgb.input(
                     value="{market_pair}", label="Пара для группировки (пусто = общие данные)",
                     on_change=on_change_refresh, change_delay=600,
                 )
-                # tgb.text("_Клик по строке — график динамики по времени._", mode="md", class_name="hint")
 
                 with tgb.part(class_name="card"):
                     for _key, _label in config.MARKET_METRICS.items():
@@ -429,7 +527,7 @@ with tgb.Page() as page:
                                 tgb.chart(figure="{fig_metric_ts}")
                                 tgb.chart(figure="{fig_metric_pair}")
 
-            # ----------------------- Анализ тренда -----------------------
+            # ---- Анализ тренда ----
             with tgb.part(id="sec-trend"):
                 tgb.text("## Анализ тренда", mode="md")
                 with tgb.layout("1fr 1fr 1fr", class_name="trend-controls"):
@@ -466,3 +564,127 @@ with tgb.Page() as page:
                         tgb.chart(figure="{fig_heatmap2}")
                 with tgb.part(class_name="card"):
                     tgb.chart(figure="{fig_area2}")
+
+    # ================================================================
+    # PAGE SIGNALS (SANS sidebar - pleine largeur)
+    # ================================================================
+    with tgb.part(render="{logged_in and current_page == 'signals'}", class_name="signals-shell"):
+
+        # ---- Topbar spécifique Signals ----
+        with tgb.part(class_name="signals-topbar"):
+
+            with tgb.part(class_name="nav-bar"):
+                tgb.button("Dashboard", on_action=show_dashboard, class_name="admin-btn")
+                tgb.button("Signals", on_action=show_signals, class_name="admin-btn active")
+        
+            with tgb.part(render="{is_admin}", class_name="admin-bar"):
+                tgb.button("Список", on_action=open_admin_users, class_name="admin-btn")
+                tgb.button("Создать", on_action=open_admin_create, class_name="admin-btn")
+                tgb.button("Удалить", on_action=open_admin_delete, class_name="admin-btn")
+                
+            with tgb.part(class_name="user-box"):
+                tgb.text("{user_login}", class_name="user-login")
+                tgb.button("Выйти", on_action=logout, class_name="logout-btn")
+
+        # ---- Signals content ----
+        with tgb.part(class_name="signals-content"):
+    
+            # Заголовок
+            tgb.text("# Сопоставление сигналов и сделок", mode="md", class_name="signals-title")
+            
+            # Статистика
+            with tgb.layout("1fr 1fr 1fr 1fr", class_name="signals-stats"):
+                with tgb.part(class_name="stat-card"):
+                    tgb.text("### Всего сигналов", mode="md")
+                    tgb.text("{signals_total}", class_name="stat-number")
+                with tgb.part(class_name="stat-card"):
+                    tgb.text("### Покрытые", mode="md")
+                    tgb.text("{signals_covered}", class_name="stat-number covered")
+                with tgb.part(class_name="stat-card"):
+                    tgb.text("### Непокрытые", mode="md")
+                    tgb.text("{signals_uncovered}", class_name="stat-number uncovered")
+                with tgb.part(class_name="stat-card"):
+                    tgb.text("### Процент покрытия", mode="md")
+                    tgb.text("{signals_coverage_rate}", class_name="stat-number")
+            
+            # Фильтры
+            with tgb.part(class_name="signals-filters"):
+                tgb.text("## Фильтры", mode="md")
+                with tgb.layout("1fr 1fr 1fr 1fr 1fr", class_name="filters-grid"):
+                    with tgb.part():
+                        tgb.text("Статус", mode="md", class_name="filter-label")
+                        tgb.selector(
+                            value="{filter_status}",
+                            lov=["Все", "Покрытые", "Непокрытые"],
+                            dropdown=True,
+                            on_change=apply_signals_filters,
+                            class_name="filter-select"
+                        )
+                    with tgb.part():
+                        tgb.text("Токен", mode="md", class_name="filter-label")
+                        tgb.input(
+                            value="{filter_token}",
+                            label="ETH, BTC, USDC...",
+                            on_change=apply_signals_filters,
+                            change_delay=300,
+                            class_name="filter-input"
+                        )
+                    with tgb.part():
+                        tgb.text("Объём мин.", mode="md", class_name="filter-label")
+                        tgb.input(
+                            value="{filter_min_volume}",
+                            label="0",
+                            on_change=apply_signals_filters,
+                            change_delay=300,
+                            class_name="filter-input"
+                        )
+                    with tgb.part():
+                        tgb.text("Объём макс.", mode="md", class_name="filter-label")
+                        tgb.input(
+                            value="{filter_max_volume}",
+                            label="1000000",
+                            on_change=apply_signals_filters,
+                            change_delay=300,
+                            class_name="filter-input"
+                        )
+                    with tgb.part():
+                        tgb.text("Дата", mode="md", class_name="filter-label")
+                        tgb.selector(
+                            value="{filter_time_range}",
+                            lov=time_lov,
+                            dropdown=True,
+                            on_change=apply_signals_filters,
+                            class_name="filter-select"
+                        )
+                
+                with tgb.layout("auto auto", class_name="filter-actions"):
+                    tgb.button("Сбросить", on_action=reset_signals_filters, class_name="reset-btn")
+                    tgb.button("Экспорт CSV", on_action=export_signals_csv, class_name="export-btn")
+            
+            # Таблица
+            with tgb.part(class_name="signals-table-section"):
+                with tgb.layout("1fr auto", class_name="table-header"):
+                    tgb.text("## Таблица сигналов", mode="md")
+                    with tgb.part(class_name="table-controls"):
+                        tgb.text("Строк:", class_name="label")
+                        tgb.selector(
+                            value="{signals_page_size}",
+                            lov=[10, 20, 50, 100],
+                            dropdown=True,
+                            on_change=load_signals_page,
+                            class_name="page-size-select"
+                        )
+                
+                tgb.table(
+                    data="{signals_display_data}",
+                    columns="{signals_columns}",
+                    rebuild=True,
+                    page_size=0,
+                    on_action=on_signal_row_click
+                )
+                
+                # Пагинация
+                with tgb.part(class_name="pagination-controls"):
+                    tgb.button(" Предыдущая", on_action=prev_signals_page, class_name="page-btn")
+                    tgb.text("Страница {signals_current_page} / {signals_total_pages}", class_name="page-info")
+                    tgb.button("Следующая ", on_action=next_signals_page, class_name="page-btn")

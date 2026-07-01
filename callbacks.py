@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import pandas as pd
 from taipy.gui import notify
+from data.mock_signals import get_mock_signals
 
 import config
 import viz
@@ -209,6 +210,9 @@ def _refresh_expanded_metric(state, metrics=None):
 def on_init(state):
     """Первичная загрузка данных при подключении клиента."""
     refresh_all(state)
+
+    from pages.main_page import load_signals_data
+    load_signals_data(state)
 
 
 def on_change_refresh(state, var_name=None, value=None):
@@ -460,3 +464,42 @@ def toggle_metric(state, id):
     state.expanded_metric = None if state.expanded_metric == key else key
     if state.expanded_metric:
         _refresh_expanded_metric(state)
+
+# adding the state of the new page 
+def show_dashboard(state):
+    state.current_page = "dashboard"
+
+def show_signals(state):
+    state.current_page = "signals"
+
+def next_signals_page(state):
+    """Переход на следующую страницу."""
+    if state.signals_current_page < state.signals_total_pages:
+        state.signals_current_page += 1
+        _load_signals_page(state)
+
+
+def prev_signals_page(state):
+    """Переход на предыдущую страницу."""
+    if state.signals_current_page > 1:
+        state.signals_current_page -= 1
+        _load_signals_page(state)
+
+
+def apply_signals_filters(state):
+    """Применяет фильтры и перезагружает данные."""
+    state.signals_current_page = 1
+    _refresh_signals_data(state)
+
+
+def reset_signals_filters(state):
+    """Сбрасывает все фильтры."""
+    state.filter_status = "Все"
+    state.filter_token = ""
+    state.filter_min_volume = ""
+    state.filter_max_volume = ""
+    state.filter_time_range = config.TIME_RANGES[config.DEFAULT_TIME_RANGE]
+    state.signals_current_page = 1
+    _refresh_signals_data(state)
+
+
