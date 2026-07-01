@@ -1,11 +1,18 @@
 import psycopg2
+import os
+
+POSTGRESQL_HOST = os.getenv("PG_HOST", "localhost")
+POSTGRESQL_PORT = int(os.getenv("PG_PORT", "5432"))
+POSTGRESQL_USER = os.getenv("PG_USER", "postgres")
+POSTGRESQL_PASSWORD = os.getenv("PG_PASSWORD", "mysecretpassword")
+POSTGRESQL_DB = os.getenv("PG_DB", "mydb")
 
 pg_connection = psycopg2.connect(
-        host="localhost",
-        port=5432,
-        database="mydb",
-        user="postgres",
-        password="mysecretpassword"
+        host=POSTGRESQL_HOST,
+        port=POSTGRESQL_PORT,
+        database=POSTGRESQL_DB,
+        user=POSTGRESQL_USER,
+        password=POSTGRESQL_PASSWORD
 )
 
 def get_signals_df(limit = 50, min_timestamp = 0, max_timestamp = 0xffffffffffffffff, 
@@ -37,15 +44,15 @@ def get_signals_df(limit = 50, min_timestamp = 0, max_timestamp = 0xffffffffffff
         if tokens_b_list:
                 tokens_b = "AND quote_token IN ("+", ".join(f"'{i}'" for i in tokens_b_list)+") "      
 
-        cursor.execute(f'''select swaps_request.id, swaps_request.timestamp, base_token, 
+        cursor.execute(f'''SELECT swaps_request.id, swaps_request.timestamp, base_token, 
                         quote_token, quote_amount, potential_profit 
-                        from arbitrages join swaps_request on arbitrages.id=swaps_request.arbitrage_id 
-                        where swaps_request.timestamp > {min_timestamp} and swaps_request.timestamp < {max_timestamp} and 
-                        quote_amount > {min_amount} and quote_amount < {max_amount} and 
-                        potential_profit > {min_profit} and potential_profit < {max_profit}
+                        FROM arbitrages JOIN swaps_request ON arbitrages.id=swaps_request.arbitrage_id 
+                        WHERE swaps_request.timestamp > {min_timestamp} AND swaps_request.timestamp < {max_timestamp} AND 
+                        quote_amount > {min_amount} AND quote_amount < {max_amount} AND 
+                        potential_profit > {min_profit} AND potential_profit < {max_profit}
                         {tokens_a}{tokens_b}
                         {orderby} 
-                        limit {limit};''')
+                        LIMIT {limit};''')
         result = cursor.fetchall()
         cursor.close()
         return result
