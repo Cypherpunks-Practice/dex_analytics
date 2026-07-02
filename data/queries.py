@@ -700,7 +700,7 @@ def get_heatmap_time_pools(filters: dict, metric: str):
     """Хитмап 2: строки=пулы, колонки=время (день), значения=metric."""
     if clickhouse.USE_STUB:
         return stubs.heatmap_time_pools(
-            metric, filters.get("time_range", "today"), config.HEATMAP_POOLS_LIMIT)
+            metric, filters.get("time_range", "today"), config.HEATMAP_TIME_POOLS_LIMIT)
     tc = filters.get("time_range", "today")
     expr = _TREND_EXPR.get(metric, _TREND_EXPR["volume"])
     where, params = _scope(filters)

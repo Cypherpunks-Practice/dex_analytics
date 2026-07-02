@@ -13,11 +13,10 @@ from __future__ import annotations
 
 import pandas as pd
 from taipy.gui import notify
-from data.mock_signals import get_mock_signals
 
 import config
 import viz
-from data import queries
+from data import queries, signals_service
 from data.login_logic import (
     User as auth_user,
     check_password,
@@ -210,9 +209,7 @@ def _refresh_expanded_metric(state, metrics=None):
 def on_init(state):
     """Первичная загрузка данных при подключении клиента."""
     refresh_all(state)
-
-    from pages.main_page import load_signals_data
-    load_signals_data(state)
+    refresh_signals(state)
 
 
 def on_change_refresh(state, var_name=None, value=None):
@@ -465,31 +462,107 @@ def toggle_metric(state, id):
     if state.expanded_metric:
         _refresh_expanded_metric(state)
 
-# adding the state of the new page 
+# --- Страница «Сигналы» (данные: data/signals_service.py) --------------------
+# signals_full_data хранит ПОЛНЫЙ summary-df из БД (или стаба); фильтры,
+# статистика и пагинация считаются на клиенте в _signals_view — без повторных
+# запросов к Postgres/ClickHouse. Перезапрос из БД — только refresh_signals
+# (вызывается из on_init).
 def show_dashboard(state):
     state.current_page = "dashboard"
 
+
 def show_signals(state):
     state.current_page = "signals"
+
+
+def refresh_signals(state):
+    """Перезапросить сигналы+трейды из БД (или стаба) и перерисовать таблицу."""
+    state.signals_full_data = signals_service.get_signal_matches()[0]
+    _signals_view(state)
+
+
+def _to_float(text):
+    """Число из текстового поля фильтра; None — пусто или не число."""
+    try:
+        return float(str(text).strip().replace(" ", ""))
+    except (TypeError, ValueError):
+        return None
+
+
+def _filtered_signals(state) -> pd.DataFrame:
+    """Применить клиентские фильтры страницы к полному summary."""
+    df = state.signals_full_data
+    if df.empty:
+        return df
+    if state.filter_status == "Покрытые":
+        df = df[df["covered"]]
+    elif state.filter_status == "Непокрытые":
+        df = df[~df["covered"]]
+    token = (state.filter_token or "").strip().lower()
+    if token:
+        cols = ["token_a", "token_b", "base_token", "quote_token"]
+        mask = pd.concat(
+            [df[c].astype(str).str.lower().str.contains(token, na=False)
+             for c in cols], axis=1).any(axis=1)
+        df = df[mask]
+    lo = _to_float(state.filter_min_volume)
+    if lo is not None:
+        df = df[df["signal_amount"] >= lo]
+    hi = _to_float(state.filter_max_volume)
+    if hi is not None:
+        df = df[df["signal_amount"] <= hi]
+    # Окно «Дата» — от максимальной метки времени в данных (анкер по данным,
+    # как TIME_ANCHOR="data"); "all" в SIGNALS_TIME_WINDOWS отсутствует.
+    key = _TIME_KEY.get(state.filter_time_range, config.DEFAULT_TIME_RANGE)
+    window = config.SIGNALS_TIME_WINDOWS.get(key)
+    if window is not None and not df.empty:
+        anchor = state.signals_full_data["signal_timestamp"].max()
+        df = df[df["signal_timestamp"] >= anchor - window]
+    return df
+
+
+def _signals_view(state):
+    """Фильтры → статистика → пагинация → видимая страница таблицы."""
+    df = _filtered_signals(state)
+    total = len(df)
+    covered = int(df["covered"].sum()) if total else 0
+    state.signals_total = total
+    state.signals_covered = covered
+    state.signals_uncovered = total - covered
+    state.signals_coverage_rate = f"{covered / total * 100:.1f}%" if total else "0%"
+
+    page_size = max(int(state.signals_page_size), 1)
+    state.signals_total_pages = max((total + page_size - 1) // page_size, 1)
+    if state.signals_current_page > state.signals_total_pages:
+        state.signals_current_page = state.signals_total_pages
+    start = (state.signals_current_page - 1) * page_size
+    state.signals_display_data = df.iloc[start:start + page_size]
+
 
 def next_signals_page(state):
     """Переход на следующую страницу."""
     if state.signals_current_page < state.signals_total_pages:
         state.signals_current_page += 1
-        _load_signals_page(state)
+        _signals_view(state)
 
 
 def prev_signals_page(state):
     """Переход на предыдущую страницу."""
     if state.signals_current_page > 1:
         state.signals_current_page -= 1
-        _load_signals_page(state)
+        _signals_view(state)
 
 
-def apply_signals_filters(state):
-    """Применяет фильтры и перезагружает данные."""
+def change_signals_page_size(state, var_name=None, value=None):
+    """Селектор «Строк»: пересчитать пагинацию под новый размер страницы."""
     state.signals_current_page = 1
-    _refresh_signals_data(state)
+    _signals_view(state)
+
+
+def apply_signals_filters(state, var_name=None, value=None):
+    """Фильтры уже записаны в state биндингом — пересобрать вид без запроса к БД."""
+    state.signals_current_page = 1
+    _signals_view(state)
 
 
 def reset_signals_filters(state):
@@ -500,6 +573,19 @@ def reset_signals_filters(state):
     state.filter_max_volume = ""
     state.filter_time_range = config.TIME_RANGES[config.DEFAULT_TIME_RANGE]
     state.signals_current_page = 1
-    _refresh_signals_data(state)
+    _signals_view(state)
+
+
+def export_signals_csv(state):
+    """Экспорт в CSV (заглушка)."""
+    if state.signals_full_data.empty:
+        return
+    # TODO: реализовать экспорт CSV
+    pass
+
+
+def on_signal_row_click(state, action=None, info=None):
+    """Обработка клика по строке (заглушка)."""
+    pass
 
 

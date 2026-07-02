@@ -25,32 +25,33 @@ from callbacks import (
     admin_delete,
     admin_demote,
     admin_promote,
+    apply_signals_filters,
+    change_signals_page_size,
     close_admin_dialog,
+    export_signals_csv,
     login,
     logout,
+    next_signals_page,
     on_change_refresh,
+    on_signal_row_click,
     open_admin_create,
     open_admin_delete,
     open_admin_role,
     open_admin_users,
+    prev_signals_page,
     rebuild_area1,
     rebuild_pie,
     remove_exclude_pool_shark,
     remove_exclude_trade_shark,
     remove_include_shark,
     remove_pool,
+    reset_signals_filters,
+    show_dashboard,
+    show_signals,
     toggle_metric,
     toggle_sidebar,
 )
 import config
-
-
-def show_dashboard(state):
-    state.current_page = "dashboard"
-
-
-def show_signals(state):
-    state.current_page = "signals"
 
 
 # ---------------------------------------------------------------------------
@@ -195,8 +196,6 @@ signals_covered = 0
 signals_uncovered = 0
 signals_coverage_rate = "0%"
 
-# Режим разработки (использовать mock-данные)
-use_mock_data = True
 # ---- Колонки для таблицы сигналов ----
 signals_columns = {
     "signal_timestamp": {"index": 0, "title": "Время сигнала"},
@@ -256,77 +255,6 @@ def card_3_pressed(state):
             state.card2_class = buf
         else:
             state.card1_class = buf
-
-def load_signals_data(state):
-    """Загружает данные для страницы Сигналы."""
-    from data.mock_signals import get_mock_signals
-    
-    if state.use_mock_data:
-        state.signals_full_data = get_mock_signals(100)
-    else:
-        state.signals_full_data = _empty_df
-    
-    # Обновление статистики
-    if not state.signals_full_data.empty:
-        unique_signals = state.signals_full_data['signal_timestamp'].nunique()
-        covered_signals = state.signals_full_data[state.signals_full_data['swap_amount'].notna()]['signal_timestamp'].nunique()
-        
-        state.signals_total = unique_signals
-        state.signals_covered = covered_signals
-        state.signals_uncovered = unique_signals - covered_signals
-        state.signals_coverage_rate = f"{(covered_signals / unique_signals * 100):.1f}%" if unique_signals > 0 else "0%"
-        
-        state.signals_total_pages = (len(state.signals_full_data) + state.signals_page_size - 1) // state.signals_page_size
-        load_signals_page(state)
-
-def load_signals_page(state):
-    """Загружает одну страницу данных."""
-    if state.signals_full_data.empty:
-        state.signals_display_data = _empty_df
-        return
-    
-    start = (state.signals_current_page - 1) * state.signals_page_size
-    end = start + state.signals_page_size
-    state.signals_display_data = state.signals_full_data.iloc[start:end]
-
-def next_signals_page(state):
-    """Следующая страница."""
-    if state.signals_current_page < state.signals_total_pages:
-        state.signals_current_page += 1
-        load_signals_page(state)
-
-def prev_signals_page(state):
-    """Предыдущая страница."""
-    if state.signals_current_page > 1:
-        state.signals_current_page -= 1
-        load_signals_page(state)
-
-def reset_signals_filters(state):
-    """Сброс всех фильтров."""
-    state.filter_status = "Все"
-    state.filter_token = ""
-    state.filter_min_volume = ""
-    state.filter_max_volume = ""
-    state.filter_time_range = config.TIME_RANGES[config.DEFAULT_TIME_RANGE]
-    state.signals_current_page = 1
-    load_signals_data(state)
-
-def apply_signals_filters(state):
-    """Применяет фильтры (заглушка - пока просто перезагружает данные)."""
-    state.signals_current_page = 1
-    load_signals_data(state)
-
-def export_signals_csv(state):
-    """Экспорт в CSV (заглушка)."""
-    if state.signals_full_data.empty:
-        return
-    # TODO: реализовать экспорт CSV
-    pass
-
-def on_signal_row_click(state, action, info):
-    """Обработка клика по строке (заглушка)."""
-    pass
-
 
 # ---------------------------------------------------------------------------
 # Сборка страницы
@@ -671,7 +599,7 @@ with tgb.Page() as page:
                             value="{signals_page_size}",
                             lov=[10, 20, 50, 100],
                             dropdown=True,
-                            on_change=load_signals_page,
+                            on_change=change_signals_page_size,
                             class_name="page-size-select"
                         )
                 
