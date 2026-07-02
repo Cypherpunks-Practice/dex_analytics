@@ -41,21 +41,21 @@ class User:
         True if user has been added
         False if user with this login already exists
         '''
-        Admin_panel.add_user(login, password, is_admin, self.login)
+        return Admin_panel.add_user(login, password, is_admin, self.login)
 
     def admin_delete_user(self, login):
         '''
         returns None if user is not admin, 
         else returns number of deleted users
         '''
-        Admin_panel.delete_user(login, self.login)
+        return Admin_panel.delete_user(login, self.login)
 
     def admin_get_users_list(self):
         '''
         returns None if user is not admin, 
         else returns users list in format [["name", is_admin],...]
         '''
-        Admin_panel.get_users_list(self.login)
+        return Admin_panel.get_users_list(self.login)
     
 
 class Admin_panel:

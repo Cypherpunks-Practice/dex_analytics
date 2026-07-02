@@ -20,7 +20,7 @@ from data import queries
 from data.login_logic import (
     User as auth_user,
     check_password,
-    get_is_admin_from_db,
+    Admin_panel,
 )
 
 # Реверс-словари: подпись -> внутренний ключ.
@@ -322,7 +322,7 @@ def login(state):
     if check_password(login_name, password) == 1:
         state.logged_in = True
         state.user_login = login_name
-        state.is_admin = bool(get_is_admin_from_db(login_name))
+        state.is_admin = bool(Admin_panel.check_is_admin(login_name))
         state.password = ""                # не держим пароль в состоянии
     else:
         state.password = ""
