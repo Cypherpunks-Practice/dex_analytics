@@ -7,8 +7,6 @@ def check_password(login, password):
     h = hashlib.sha256()
     h.update(password.encode('utf-8'))
     curr_pass = bytes.fromhex(h.hexdigest())
-    print(curr_pass)
-    print(orig_pass)
     if orig_pass == None:
         return 0
     if orig_pass == curr_pass:
@@ -16,16 +14,6 @@ def check_password(login, password):
     else: 
         return 0
 
-def get_is_admin_from_db(login):
-    connection = sqlite3.connect('logins.db')
-    cursor = connection.cursor()
-    cursor.execute(f'SELECT is_admin FROM logins WHERE login = "{login}"')
-    is_admin = cursor.fetchone()
-    connection.close()
-    if not is_admin:
-        return False
-    else:
-        return is_admin[0]
 
 def get_password_from_db(login):
     connection = sqlite3.connect('logins.db')
@@ -37,14 +25,12 @@ def get_password_from_db(login):
         return None
     else:
         return password[0]
-
+# add user - (login) check_is_admin -> func
 class User:
-    is_admin = 0
     login = None
 
     def __init__(self, login):
         self.login = login
-        self.is_admin = get_is_admin_from_db(login)
 
     def get_login(self):
         return self.login
@@ -55,7 +41,43 @@ class User:
         True if user has been added
         False if user with this login already exists
         '''
-        if self.is_admin == 1:
+        Admin_panel.add_user(login, password, is_admin, self.login)
+
+    def admin_delete_user(self, login):
+        '''
+        returns None if user is not admin, 
+        else returns number of deleted users
+        '''
+        Admin_panel.delete_user(login, self.login)
+
+    def admin_get_users_list(self):
+        '''
+        returns None if user is not admin, 
+        else returns users list in format [["name", is_admin],...]
+        '''
+        Admin_panel.get_users_list(self.login)
+    
+
+class Admin_panel:
+
+    def check_is_admin(requester):
+        connection = sqlite3.connect('logins.db')
+        cursor = connection.cursor()
+        cursor.execute(f'SELECT is_admin FROM logins WHERE login = "{requester}"')
+        is_admin = cursor.fetchone()
+        connection.close()
+        if not is_admin:
+            return False
+        else:
+            return is_admin[0]
+        
+    def add_user(login, password, is_admin, requester):
+        '''
+        returns None if user is not admin, 
+        True if user has been added
+        False if user with this login already exists
+        '''
+        if Admin_panel.check_is_admin(requester):
 
             h = hashlib.sha256()
             p = password
@@ -78,12 +100,12 @@ class User:
             
         else: return None
 
-    def admin_delete_user(self, login):
+    def delete_user(login, requester):
         '''
         returns None if user is not admin, 
         else returns number of deleted users
         '''
-        if self.is_admin == 1:
+        if Admin_panel.check_is_admin(requester):
             connection = sqlite3.connect('logins.db')
             cursor = connection.cursor()
             cursor.execute(f'DELETE FROM logins WHERE login = "{login}"')
@@ -93,12 +115,12 @@ class User:
             return deletions_counter
         else: return None
 
-    def admin_get_users_list(self):
+    def get_users_list(requester):
         '''
         returns None if user is not admin, 
         else returns users list in format [["name", is_admin],...]
         '''
-        if self.is_admin == 1:
+        if Admin_panel.check_is_admin(requester):
             connection = sqlite3.connect('logins.db')
             cursor = connection.cursor()
             cursor.execute(f'SELECT login, is_admin FROM logins')
@@ -106,7 +128,7 @@ class User:
             connection.close()
             return users_list
         else: return None
-    
+
 
 
 '''#That's the log-in test:
@@ -117,7 +139,6 @@ t = 'test_password'
 h.update(t.encode('utf-8'))
 hash_ = h.hexdigest()
 cursor.execute(f'INSERT INTO logins VALUES ("test_login", x\'{hash_}\', {False})')
-connection.commit()
 cursor.execute(f'SELECT * FROM logins;')
 for i in cursor.fetchall():
     print(i)
