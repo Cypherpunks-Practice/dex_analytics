@@ -597,7 +597,7 @@ with tgb.Page() as page:
                         tgb.text("Строк:", class_name="label")
                         tgb.selector(
                             value="{signals_page_size}",
-                            lov=[10, 20, 50, 100],
+                            lov=[500, 1000, 5000, 10000, 50000, 100000],
                             dropdown=True,
                             on_change=change_signals_page_size,
                             class_name="page-size-select"
@@ -607,12 +607,10 @@ with tgb.Page() as page:
                     data="{signals_display_data}",
                     columns="{signals_columns}",
                     rebuild=True,
-                    page_size=0,
+                    page_size=0,    
+                    page_size_options=[10, 50, 100, 500],
                     on_action=on_signal_row_click
                 )
                 
-                # Пагинация
-                with tgb.part(class_name="pagination-controls"):
-                    tgb.button(" Предыдущая", on_action=prev_signals_page, class_name="page-btn")
-                    tgb.text("Страница {signals_current_page} / {signals_total_pages}", class_name="page-info")
-                    tgb.button("Следующая ", on_action=next_signals_page, class_name="page-btn")
+                
+                    
