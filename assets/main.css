@@ -100,22 +100,22 @@
 }
 
 .mode-toggle {
-    display: flex;
-    width: 100%;
-    margin: 2px 0 8px;
+  display: flex;
+  width: 100%;
+  margin: 2px 0 8px;
 }
 
 .mode-toggle .MuiToggleButtonGroup-root {
-    display: flex;
-    width: 100%;
+  display: flex;
+  width: 100%;
 }
 
 .mode-toggle .MuiToggleButton-root {
-    flex: 1 1 0;
-    font-size: 0.72rem;
-    line-height: 1.1;
-    padding: 3px 4px;
-    text-transform: none;
+  flex: 1 1 0;
+  font-size: 0.72rem;
+  line-height: 1.1;
+  padding: 3px 4px;
+  text-transform: none;
 }
 
 /* --- Чипсы фильтров (chip = part c render, внутри кнопка-«✕») ---------- */
@@ -171,23 +171,6 @@
 }
 
 .top_card {
-<<<<<<< HEAD
-    background: #ffffff;
-    height: 100%;
-    aspect-ratio: 1 / 1;
-    grid-column: 1;
-    grid-row: 1;
-    border-radius: 10px;
-    padding: 0;
-    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
-    box-sizing: border-box;
-    position: relative;
-    overflow: hidden;
-    display: flex; 
-    flex-direction: column;
-    align-items: center; 
-    justify-content: center; 
-=======
   background: #ffffff;
   height: 100%;
   aspect-ratio: 1 / 1;
@@ -203,7 +186,6 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
->>>>>>> origin/pamela
 }
 
 .main_card {
@@ -222,23 +204,6 @@
 }
 
 .bottom_card {
-<<<<<<< HEAD
-    background: #ffffff; 
-    height: 100%;
-    aspect-ratio: 1 / 1;
-    grid-column: 1;
-    grid-row: 2; 
-    border-radius: 10px;
-    padding: 0;
-    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.04);
-    position: relative;
-    overflow: hidden;
-    box-sizing: border-box;
-    display: flex; 
-    flex-direction: column;
-    align-items: center; 
-    justify-content: center;
-=======
   background: #ffffff;
   height: 100%;
   aspect-ratio: 1 / 1;
@@ -254,7 +219,6 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
->>>>>>> origin/pamela
 }
 
 .click-layer {
@@ -415,94 +379,242 @@
 
 /* --- Верхняя строка: админ-панель (слева) + блок пользователя (справа) - */
 .topbar {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    margin-bottom: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
 }
 
 .user-box {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 4px;
-    /* Всегда прижимать блок логина вправо, даже если админ-бар не отрисован. */
-    margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  /* Всегда прижимать блок логина вправо, даже если админ-бар не отрисован. */
+  margin-left: auto;
 }
 
 .user-login {
-    font-weight: 600;
-    color: #0f172a;
+  font-weight: 600;
+  color: #0f172a;
 }
 
 .logout-btn button {
-    background: #2563eb;
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    padding: 4px 12px;
-    cursor: pointer;
-    font-size: 0.85rem;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: 0.85rem;
 }
 
 .logout-btn button:hover {
-    background: #1d4ed8;
+  background: #1d4ed8;
 }
 
 /* --- Админ-панель: ряд компактных кнопок + модалки -------------------- */
 .admin-bar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
 }
 
 .admin-btn button {
-    background: #e0e7ff;
-    color: #3730a3;
-    border: none;
-    border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 0.8rem;
-    cursor: pointer;
+  background: #e0e7ff;
+  color: #3730a3;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
 }
 
 .admin-btn button:hover {
-    background: #c7d2fe;
+  background: #c7d2fe;
 }
 
 /* Содержимое модалки админ-панели: вертикальная форма с отступами. */
 .admin-dialog {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 4px 2px 8px;
-    min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 2px 8px;
+  min-width: 280px;
 }
 
 .admin-dialog input {
-    width: 100%;
+  width: 100%;
 }
 
 /* Основная кнопка действия внутри модалки (синяя; .danger — красная). */
 .admin-action-btn button {
-    background: #2563eb;
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    padding: 6px 14px;
-    cursor: pointer;
-    font-size: 0.85rem;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 0.85rem;
 }
 
 .admin-action-btn button:hover {
-    background: #1d4ed8;
+  background: #1d4ed8;
 }
 
 .admin-action-btn.danger button {
-    background: #dc2626;
+  background: #dc2626;
 }
 
 .admin-action-btn.danger button:hover {
-    background: #b91c1c;
+  background: #b91c1c;
+}
+
+/*navigation bar */
+.nav-bar {
+  display: flex;
+  gap: 12px; /* Plus d'espace entre les boutons */
+  align-items: center;
+}
+
+.admin-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: 20px;
+  padding-left: 20px;
+  border-left: 2px solid #4a5568;
+}
+
+.nav-btn button {
+  background: transparent;
+  border: none;
+  color: #475569;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.nav-btn button:hover {
+  background: #e2e8f0;
+}
+
+.nav-btn.active button {
+  background: #2563eb;
+  color: white;
+}
+
+/* Page Signals  */
+.signals-shell {
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+  margin: 0;
+}
+.signals-content {
+  padding: 24px 30px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.signals-title {
+  margin-bottom: 24px;
+  color: #1a2332;
+}
+
+.signals-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  background: white;
+  padding: 16px 20px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  text-align: center;
+}
+
+.stat-number {
+  font-size: 32px;
+  font-weight: 700;
+  color: #1a2332;
+}
+
+.stat-number.covered {
+  color: #48bb78;
+}
+
+.stat-number.uncovered {
+  color: #fc8181;
+}
+
+.signals-filters {
+  background: #f7fafc;
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 24px;
+}
+
+.filters-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.filter-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #4a5568;
+  margin-bottom: 4px;
+}
+
+.filter-select,
+.filter-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.filter-actions {
+  margin-top: 12px;
+  gap: 8px;
+  display: flex;
+}
+
+.reset-btn {
+  background: #e2e8f0;
+  color: #2d3748;
+  padding: 8px 20px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+}
+
+.export-btn {
+  background: #48bb78;
+  color: white;
+  padding: 8px 20px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+}
+
+.signals-table-section {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.hint {
+  color: #718096;
+  font-size: 14px;
 }
