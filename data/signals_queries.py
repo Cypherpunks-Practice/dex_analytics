@@ -45,9 +45,11 @@ def get_signals_df(limit = 50, min_timestamp = 0, max_timestamp = 0xffffffffffff
                 tokens_b = "AND quote_token IN ("+", ".join(f"'{i}'" for i in tokens_b_list)+") "      
 
         cursor.execute(f'''SELECT swaps_request.id, swaps_request.timestamp, base_token, 
-                        quote_token, quote_amount, potential_profit 
+                        quote_token, quote_amount, bribe, target_block, route, potential_profit 
                         FROM arbitrages JOIN swaps_request ON arbitrages.id=swaps_request.arbitrage_id 
-                        WHERE swaps_request.timestamp > {min_timestamp} AND swaps_request.timestamp < {max_timestamp} AND 
+                        JOIN swaps_request_dex ON swaps_request_dex.id = swaps_request.id
+                        WHERE type = 'DECENTRALIZED' AND
+                        swaps_request.timestamp > {min_timestamp} AND swaps_request.timestamp < {max_timestamp} AND 
                         quote_amount > {min_amount} AND quote_amount < {max_amount} AND 
                         potential_profit > {min_profit} AND potential_profit < {max_profit}
                         {tokens_a}{tokens_b}
