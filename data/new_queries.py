@@ -95,6 +95,10 @@ def get_trades(pair_blocks, use_stub: bool = False, window_size: int = 2) -> pd.
           )
     """
 
-    # Выполняем через общий executor (ленивый клиент + лок), получаем DataFrame
-    return clickhouse.execute(
+    # clickhouse-connect на пустом результате отдаёт DataFrame без единой
+    # колонки (shape (0, 0)) — приводим к контракту (те же именованные columns,
+    # что и в guard-ветке "пустой pair_blocks" выше), иначе matching.build_matches
+    # падает на t["token_a"] с KeyError.
+    result = clickhouse.execute(
         query, {"minb": min_block, "maxb": max_block, "pairs": pair_keys})
+    return result if not result.empty else pd.DataFrame(columns=columns)

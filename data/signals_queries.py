@@ -20,16 +20,26 @@ _pg_connection = None
 
 
 def _get_connection():
-    """Ленивое подключение к Postgres (+реконнект, если соединение закрыто)."""
+    """Ленивое подключение к Postgres (+реконнект, если соединение закрыто).
+
+    Если сервер локализован (напр. русский Windows-инсталлятор PG шлёт
+    ошибки в cp1251), psycopg2 падает сырым UnicodeDecodeError вместо
+    OperationalError с текстом — здесь перехватываем это и перевыбрасываем
+    как OperationalError с читаемым сообщением (utf-8 -> cp1251 -> lossy).
+    """
     global _pg_connection
     if _pg_connection is None or _pg_connection.closed:
-        _pg_connection = psycopg2.connect(
-            host=os.getenv("PG_HOST", "localhost"),
-            port=int(os.getenv("PG_PORT", "5432")),
-            database=os.getenv("PG_DB", "mydb"),
-            user=os.getenv("PG_USER", "postgres"),
-            password=os.getenv("PG_PASSWORD", "mysecretpassword"),
-        )
+        try:
+            _pg_connection = psycopg2.connect(
+                host=os.getenv("PG_HOST", "localhost"),
+                port=int(os.getenv("PG_PORT", "5432")),
+                database=os.getenv("PG_DB", "mydb"),
+                user=os.getenv("PG_USER", "postgres"),
+                password=os.getenv("PG_PASSWORD", "mysecretpassword"),
+            )
+        except UnicodeDecodeError as exc:
+            msg = exc.object.decode("cp1251", errors="replace")
+            raise psycopg2.OperationalError(msg) from exc
     return _pg_connection
 
 
