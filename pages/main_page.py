@@ -181,6 +181,7 @@ signals_display_data = _empty_df
 # Фильтры
 filter_status = "Все"
 filter_token = ""
+filter_block_window = 0
 filter_min_volume = ""
 filter_max_volume = ""
 filter_time_range = config.TIME_RANGES[config.DEFAULT_TIME_RANGE]
@@ -563,7 +564,7 @@ with tgb.Page() as page:
                     with tgb.part():
                         tgb.text("Диапазон блоков", mode="md", class_name="filter-label")
                         tgb.input(
-                            value="{filter_min_block}",
+                            value="{filter_block_window}",
                             label="Диап. блоков",
                             on_change=apply_signals_filters,
                             change_delay=300,
