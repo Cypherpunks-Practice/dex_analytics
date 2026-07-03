@@ -20,13 +20,19 @@ import config
 from data import clickhouse, matching, new_queries, signals_queries
 
 
-def get_signal_matches(limit: int = config.SIGNALS_LIMIT):
-    """(summary_df, matches_df) — контракт см. в `data/matching.py`."""
+def get_signal_matches(limit: int = config.SIGNALS_LIMIT,
+                       block_window: int = config.SIGNAL_BLOCK_WINDOW):
+    """(summary_df, matches_df) — контракт см. в `data/matching.py`.
+
+    ``block_window`` — окно покрытия ±N блоков от found_block сигнала (значение
+    приходит с фронтенда; по умолчанию `config.SIGNAL_BLOCK_WINDOW`).
+    """
     if clickhouse.USE_STUB:
         signals_df, trades_df = _stub_signals_and_trades(limit)
-        return matching.build_matches(signals_df, trades_df)
+        return matching.build_matches(signals_df, trades_df, block_window=block_window)
     return matching.fetch_and_match(
-        signals_queries.get_signals, new_queries.get_trades, limit)
+        signals_queries.get_signals, new_queries.get_trades, limit,
+        block_window=block_window)
 
 
 # --------------------------------------------------------------------------- #
@@ -86,7 +92,7 @@ def _stub_signals_and_trades(limit: int):
             request_id=i + 1, ts=ts,
             base_token=route[-1]["token_out_address"], quote_token=a,
             quote_amount=amount, bribe=float(rng.uniform(0, 2)),
-            target_block=block, route=route,
+            found_block=block, route=route,
         ))
         if rng.random() < 0.6:                           # покрывающие трейды
             for hop in route:

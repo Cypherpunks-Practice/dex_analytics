@@ -477,6 +477,7 @@ def show_signals(state):
 
 def refresh_signals(state):
     """Перезапросить сигналы+трейды из БД (или стаба) и перерисовать таблицу."""
+    # state.signals_full_data = signals_service.get_signal_matches(block_window=state.block_window)[0]
     state.signals_full_data = signals_service.get_signal_matches()[0]
     _signals_view(state)
 
