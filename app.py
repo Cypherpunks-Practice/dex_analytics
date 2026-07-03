@@ -13,6 +13,8 @@ from __future__ import annotations
 import os
 import threading
 import time
+import io
+import base64
 
 from taipy.gui import Gui, get_state_id, invoke_callback
 

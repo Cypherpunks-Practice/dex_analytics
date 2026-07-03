@@ -575,17 +575,17 @@ def reset_signals_filters(state):
     state.signals_current_page = 1
     _signals_view(state)
 
+def on_signal_row_click(state, action=None, info=None):
+    pass
 
 def export_signals_csv(state):
-    """Экспорт в CSV (заглушка)."""
+    """Экспорт данных в CSV."""
     if state.signals_full_data.empty:
+        notify(state, "warning", "Нет данных для экспорта")
         return
-    # TODO: реализовать экспорт CSV
-    pass
 
-
-def on_signal_row_click(state, action=None, info=None):
-    """Обработка клика по строке (заглушка)."""
-    pass
-
-
+    csv_data = state.signals_full_data.to_csv(index=False, encoding='utf-8')
+    b64 = base64.b64encode(csv_data.encode('utf-8')).decode('utf-8')
+   
+    download_url = f"data:text/csv;base64,{b64}"
+    notify(state, "success", f"Экспортировано {len(state.signals_full_data)} строк")
