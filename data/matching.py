@@ -179,6 +179,8 @@ def fetch_and_match(get_signals, get_trades, n: int, **kwargs):
     """
     signals_df = get_signals(n, **kwargs)
     trades_df = get_trades(signal_pair_blocks(signals_df))
+    print(trades_df.head())
+    print(trades_df.size)
     return build_matches(signals_df, trades_df)
 
 
