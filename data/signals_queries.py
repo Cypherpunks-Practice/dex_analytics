@@ -35,7 +35,7 @@ def _get_connection():
                 port=int(os.getenv("PG_PORT", "5432")),
                 database=os.getenv("PG_DB", "mydb"),
                 user=os.getenv("PG_USER", "postgres"),
-                password=os.getenv("PG_PASSWORD", "mysecretpassword"),
+                password=os.getenv("PG_PASSWORD", "121205"),
             )
         except UnicodeDecodeError as exc:
             msg = exc.object.decode("cp1251", errors="replace")
@@ -78,7 +78,7 @@ def get_signals_df(limit=50, min_timestamp=0, max_timestamp=0xffffffffffffffff,
     params.append(limit)
 
     cursor.execute(f'''SELECT swaps_request.id, swaps_request.timestamp, base_token,
-                    quote_token, quote_amount, bribe, target_block, route, potential_profit
+                    quote_token, quote_amount, bribe, found_block, route, potential_profit
                     FROM arbitrages JOIN swaps_request ON arbitrages.id=swaps_request.arbitrage_id
                     JOIN swaps_request_dex ON swaps_request_dex.id = swaps_request.id
                     WHERE type = 'DECENTRALIZED' AND
@@ -116,4 +116,5 @@ def get_signals(n=50, **kwargs) -> pd.DataFrame:
         lambda r: json.loads(r) if isinstance(r, str) else r)
     df["target_block"] = df["target_block"].astype("int64")
     df["quote_amount"] = df["quote_amount"].astype(float)
+
     return df
