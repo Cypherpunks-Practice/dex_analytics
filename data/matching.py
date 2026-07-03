@@ -247,7 +247,18 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame,
     """
     sig_keys = _explode_route(signals_df)    
 
-    tokens_dict = queries.get_tokens_dict()   
+    tokens_dict = queries.get_tokens_dict()
+    def _route_to_str(r):
+        if not r:
+            return ""
+        pairs = []
+        for h in r:
+                addr_in = h.get("token_in_address", "").lower()
+                addr_out = h.get("token_out_address", "").lower()
+                symbol_in = tokens_dict.get(addr_in, addr_in[:10] + "...")
+                symbol_out = tokens_dict.get(addr_out, addr_out[:10] + "...")
+                pairs.append(f"{symbol_in} -> {symbol_out}")
+        return " | ".join(pairs)   
 
     # Нормализация трейдов: lower адресов, канонический pair_key, устойчивый trade_id.
     # lower() важен: боевой get_trades уже отдаёт нижний регистр (безвредно), но так
@@ -355,32 +366,28 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame,
     summary["swap_fee"] = rep_id.map(t_by_id["priority_fee"])
     summary["swap_timestamp"] = rep_id.map(t_by_id["swap_timestamp"])
 
-    numeric_cols = ["signal_amount", "signal_bribe", "signal_fee",
-                    "swap_amount", "swap_bribe", "swap_fee", "covering_volume"]
+    # numeric_cols = ["signal_amount", "signal_bribe", "signal_fee",
+    #                 "swap_amount", "swap_bribe", "swap_fee", "covering_volume"]
+    # summary["covering_volume"] = covering_volume
+    # summary["covering_volume"] = summary["covering_volume"].fillna(0.0)
+    # summary["n_trades"] = n_trades
+    # summary["n_trades"] = summary["n_trades"].fillna(0).astype(int)
+    # summary["covered"] = summary["covering_volume"] >= summary["signal_amount"]
+    summary["route"] = signals_df["route"].apply(_route_to_str).values
+    summary["profit"] = signals_df["profit"].values
+
+    numeric_cols = ["signal_amount", "signal_bribe", "signal_fee", 
+                    "swap_amount", "swap_bribe", "swap_fee", "covering_volume", "profit"]
     for col in numeric_cols:
         if col in summary.columns:
             summary[col] = pd.to_numeric(summary[col], errors="coerce")
         if col in matches.columns:
             matches[col] = pd.to_numeric(matches[col], errors="coerce")
-
-    def _route_to_str(r):
-        if not r:
-            return ""
-        pairs = []
-        for h in r:
-                addr_in = h.get("token_in_address", "").lower()
-                addr_out = h.get("token_out_address", "").lower()
-                symbol_in = tokens_dict.get(addr_in, addr_in[:10] + "...")
-                symbol_out = tokens_dict.get(addr_out, addr_out[:10] + "...")
-                pairs.append(f"{symbol_in} -> {symbol_out}")
-        return " | ".join(pairs)
     
-    summary["route"] = signals_df["route"].apply(_route_to_str).values
     summary = summary.reset_index()[_SUMMARY_COLS]
 
     print(summary.iloc[0])
     print(summary.iloc[1])
-    print(summary.iloc[2])
     return summary, matches
 
 
