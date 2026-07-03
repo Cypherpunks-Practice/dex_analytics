@@ -7,7 +7,7 @@ _SUMMARY_COLS = [
     "request_id", "signal_timestamp", "base_token", "quote_token",
     "token_a", "token_b", "signal_amount", "signal_bribe", "signal_fee",
     "target_block", "n_hops", "swap_timestamp", "swap_amount", "swap_user_id",
-    "swap_bribe", "swap_fee", "covering_volume", "n_trades", "covered",
+    "swap_bribe", "swap_fee", "covering_volume", "n_trades", "covered", "route",
 ]
 _MATCHES_COLS = [
     "request_id", "hop_index", "n_hops", "signal_timestamp", "token_a", "token_b",
@@ -63,6 +63,12 @@ def _explode_route(signals_df: pd.DataFrame) -> pd.DataFrame:
     # n_hops = число хопов сигнала (после отбрасывания пустых) — размер группы.
     out["n_hops"] = out.groupby("request_id")["hop_index"].transform("size")
     return out[_SIG_KEY_COLS]
+
+def _route_to_str(r):
+        if not r:
+            return ""
+        pairs = [f"{h['token_in_address']} -> {h['token_out_address']}" for h in r]
+        return " | ".join(pairs)
 
 
 def signal_pair_blocks(signals_df: pd.DataFrame) -> list[tuple[str, str, int]]:
@@ -182,7 +188,10 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame):
         if col in matches.columns:
             matches[col] = pd.to_numeric(matches[col], errors="coerce")
     
+    summary["route"] = signals_df["route"].apply(_route_to_str).values
     summary = summary.reset_index()[_SUMMARY_COLS]
+
+    #print(summary.iloc[0])
     return summary, matches
 
 
