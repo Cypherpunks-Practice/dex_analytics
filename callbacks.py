@@ -586,24 +586,36 @@ def export_signals_csv(state):
         notify(state, "warning", "No data")
         return
 
+    df = state.signals_display_data.copy()
+
+    headers = {
+    "signal_timestamp": "Время сигнала",
+    "token_a": "Токен A",
+    "token_b": "Токен B",
+    "signal_amount": "Объём сигнала",
+    "profit": "Профит",
+    "route": "Путь",
+    "signal_bribe": "Bribe сигнала",
+    "signal_fee": "Fee сигнала",
+    "swap_timestamp": "Время сделки",
+    "swap_amount": "Объём сделки",
+    "swap_user_id": "ID пользователя",
+    "swap_bribe": "Bribe сделки",
+    "swap_fee": "Fee сделки",
+}
+
+    df.rename(columns=headers, inplace=True)
+
     tmp = tempfile.NamedTemporaryFile(
         delete=False,
         suffix=".csv",
         mode="w",
-        encoding="utf-8",
+        encoding="utf-8-sig",
         newline=""
     )
-    df = state.signals_display_data.copy()
 
-df.rename(
-    columns={
-        key: value["title"]
-        for key, value in state.signals_columns.items()
-    },
-    inplace=True,
-)
+    df.to_csv(tmp.name, index=False)
 
-    state.signals_display_data.to_csv(tmp.name, index=False)
     tmp.close()
 
     state.csv_file = tmp.name
@@ -611,5 +623,5 @@ df.rename(
     notify(
         state,
         "success",
-        f"Export of {len(state.signals_display_data)} lines"
+        f"Export of {len(df)} lines"
     )
