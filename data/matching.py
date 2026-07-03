@@ -13,7 +13,7 @@ _SUMMARY_COLS = [
     "token_a", "token_b", "signal_amount", "signal_bribe", "signal_fee",
     "found_block", "n_hops", "swap_timestamp", "swap_amount", "swap_user_id",
     "swap_bribe", "swap_fee", "covering_volume", "n_trades", "swap_route", "covered",
-    "route", "profit",
+    "route", "profit", "swap_block",
 ]
 _MATCHES_COLS = [
     "request_id", "hop_index", "n_hops", "signal_timestamp", "token_a", "token_b",
@@ -358,6 +358,9 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame,
     summary["swap_bribe"] = rep_id.map(t_by_id["bribe"])
     summary["swap_fee"] = rep_id.map(t_by_id["priority_fee"])
     summary["swap_timestamp"] = rep_id.map(t_by_id["swap_timestamp"])
+    # Блок покрывающей сделки (диагностика: сравнить с found_block при ±block_window).
+    # Int64 (nullable) → у непокрытых <NA>, без float-хвоста «24791000.0».
+    summary["swap_block"] = rep_id.map(t_by_id["block_number"]).astype("Int64")
 
     # numeric_cols = ["signal_amount", "signal_bribe", "signal_fee",
     #                 "swap_amount", "swap_bribe", "swap_fee", "covering_volume"]
