@@ -26,6 +26,7 @@ from callbacks import (
     admin_demote,
     admin_promote,
     apply_signals_filters,
+    apply_signals_time_range,
     apply_signals_window,
     change_signals_page_size,
     close_admin_dialog,
@@ -608,7 +609,7 @@ with tgb.Page() as page:
                             value="{filter_time_range}",
                             lov=time_lov,
                             dropdown=True,
-                            on_change=apply_signals_filters,
+                            on_change=apply_signals_time_range,
                             class_name="filter-select"
                         )
                 

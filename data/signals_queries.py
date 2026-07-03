@@ -93,6 +93,24 @@ def get_signals_df(limit=50, min_timestamp=0, max_timestamp=0xffffffffffffffff,
     return result
 
 
+def get_max_timestamp():
+    """Максимальная метка времени DEX-сигналов — анкер окон фильтра «Дата».
+
+    Возвращает сырое число в единицах БД (сек/мс, как колонка `timestamp`) или
+    None, если сигналов нет. FROM/WHERE повторяют `get_signals_df`, чтобы анкер
+    считался только по тем же строкам (type='DECENTRALIZED'), от которых потом
+    отсчитывается окно в `signals_service`.
+    """
+    cursor = _get_connection().cursor()
+    cursor.execute('''SELECT max(swaps_request.timestamp)
+                    FROM arbitrages JOIN swaps_request ON arbitrages.id=swaps_request.arbitrage_id
+                    JOIN swaps_request_dex ON swaps_request_dex.id = swaps_request.id
+                    WHERE type = 'DECENTRALIZED';''')
+    row = cursor.fetchone()
+    cursor.close()
+    return row[0] if row and row[0] is not None else None
+
+
 # Порядок колонок соответствует SELECT в get_signals_df.
 _SIGNAL_COLS = ["request_id", "ts", "base_token", "quote_token", "quote_amount",
                 "bribe", "found_block", "route", "profit"]

@@ -477,9 +477,14 @@ def show_signals(state):
 
 
 def refresh_signals(state):
-    """Перезапросить сигналы+трейды из БД (или стаба) и перерисовать таблицу."""
-    state.signals_full_data = signals_service.get_signal_matches(block_window=state.filter_block_window)[0]
-    # state.signals_full_data = signals_service.get_signal_matches()[0]
+    """Перезапросить сигналы+трейды из БД (или стаба) и перерисовать таблицу.
+
+    Объём выборки задаёт «Дата» (окно timestamp в запросе к Postgres), окно
+    покрытия — «Диапазон блоков». Оба требуют перезапроса, поэтому читаются здесь.
+    """
+    key = _TIME_KEY.get(state.filter_time_range, config.DEFAULT_TIME_RANGE)
+    state.signals_full_data = signals_service.get_signal_matches(
+        block_window=state.filter_block_window, time_range=key)[0]
     _signals_view(state)
 
 
@@ -515,6 +520,9 @@ def _filtered_signals(state) -> pd.DataFrame:
         df = df[df["signal_amount"] <= hi]
     # Окно «Дата» — от максимальной метки времени в данных (анкер по данным,
     # как TIME_ANCHOR="data"); "all" в SIGNALS_TIME_WINDOWS отсутствует.
+    # Основную фильтрацию по дате делает уже запрос к Postgres (см.
+    # signals_service._query_min_timestamp); здесь тот же срез — защитный no-op
+    # для боевого пути и фактический фильтр для стаба (там даты в БД нет).
     key = _TIME_KEY.get(state.filter_time_range, config.DEFAULT_TIME_RANGE)
     window = config.SIGNALS_TIME_WINDOWS.get(key)
     if window is not None and not df.empty:
@@ -573,6 +581,16 @@ def apply_signals_window(state, var_name=None, value=None):
     В отличие от остальных фильтров (клиентские, `apply_signals_filters`), окно
     влияет на само покрытие, поэтому здесь дёргаем `refresh_signals` (единственный
     путь перезапроса, читает `state.filter_block_window`)."""
+    state.signals_current_page = 1
+    refresh_signals(state)
+
+
+def apply_signals_time_range(state, var_name=None, value=None):
+    """«Дата» задаёт окно timestamp в запросе к Postgres → нужен ПЕРЕЗАПРОС.
+
+    Раньше дата фильтровалась только на клиенте поверх выборки, ограниченной
+    лимитом; теперь объём выборки определяет сама дата, поэтому дёргаем
+    `refresh_signals` (читает `state.filter_time_range`), а не клиентский фильтр."""
     state.signals_current_page = 1
     refresh_signals(state)
 

@@ -32,21 +32,50 @@ def _as_block_window(value) -> int:
     return n if n >= 0 else config.SIGNAL_BLOCK_WINDOW
 
 
-def get_signal_matches(limit: int = config.SIGNALS_LIMIT,
-                       block_window: int = config.SIGNAL_BLOCK_WINDOW):
+def _query_min_timestamp(time_range: str):
+    """Нижняя граница `timestamp` для запроса сигналов по выбранной дате.
+
+    Ширину окна берём из `config.SIGNALS_TIME_WINDOWS` и откладываем от анкера —
+    максимальной метки времени в таблице сигналов (анкер «по данным», т.к. дамп
+    статичен и метки лежат в прошлом; ср. `config.TIME_ANCHOR`). Единицу БД
+    (секунды/миллисекунды) определяем по величине анкера — как в
+    `signals_queries.get_signals`. `"all"` / неизвестный ключ → None (без нижней
+    границы, тянем всё).
+    """
+    window = config.SIGNALS_TIME_WINDOWS.get(time_range)
+    if window is None:
+        return None
+    anchor = signals_queries.get_max_timestamp()
+    if anchor is None:
+        return None
+    per_second = 1000 if float(anchor) > 1e12 else 1
+    return int(anchor) - int(window.total_seconds()) * per_second
+
+
+def get_signal_matches(limit: int = config.SIGNALS_QUERY_LIMIT,
+                       block_window: int = config.SIGNAL_BLOCK_WINDOW,
+                       time_range: str = config.DEFAULT_TIME_RANGE):
     """(summary_df, matches_df) — контракт см. в `data/matching.py`.
 
     ``block_window`` — окно покрытия ±N блоков от found_block сигнала (значение
     приходит с фронтенда строкой; нормализуем к int, по умолчанию
     `config.SIGNAL_BLOCK_WINDOW`).
+
+    ``time_range`` — ключ `config.TIME_RANGES`: объём выборки определяет ВЫБРАННАЯ
+    ДАТА, а не лимит. Из даты считаем нижнюю границу `min_timestamp` и тянем все
+    сигналы окна (до `limit` самых свежих — защита от OOM на «Всё время»).
     """
     block_window = _as_block_window(block_window)
     if clickhouse.USE_STUB:
         signals_df, trades_df = _stub_signals_and_trades(limit)
         return matching.build_matches(signals_df, trades_df, block_window=block_window)
+    min_ts = _query_min_timestamp(time_range)
+    ts_kwargs = {} if min_ts is None else {"min_timestamp": min_ts}
+    # timestamp_increase=False → ORDER BY timestamp DESC: при упоре в limit
+    # оставляем самые свежие сигналы окна.
     return matching.fetch_and_match(
         signals_queries.get_signals, new_queries.get_trades, limit,
-        block_window=block_window)
+        block_window=block_window, timestamp_increase=False, **ts_kwargs)
 
 
 # --------------------------------------------------------------------------- #
