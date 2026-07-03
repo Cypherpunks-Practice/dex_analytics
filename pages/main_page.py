@@ -210,7 +210,7 @@ signals_columns = {
     "token_b": {"index": 2, "title": "Токен B"},
     "signal_amount": {"index": 3, "title": "Объём сигнала"},
     "profit": {"index": 4, "title": "Профит"}, 
-    "route": {"index": 5, "title": "Путь"},
+    "route": {"index": 5, "title": "Путь","width": "450px"},
     "signal_bribe": {"index": 4, "title": "Bribe сигнала"},
     "signal_fee": {"index": 5, "title": "Fee сигнала"},
     "swap_timestamp": {"index": 6, "title": "Время сделки"},

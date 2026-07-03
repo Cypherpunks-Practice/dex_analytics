@@ -618,3 +618,8 @@
   color: #718096;
   font-size: 14px;
 }
+.signals-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
