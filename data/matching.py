@@ -92,8 +92,8 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame):
 
     # Нормализация трейдов: lower адресов, канонический pair_key, устойчивый trade_id.
     t = trades_df.reset_index(drop=True).copy()
-    t["token_a"] = t["token_a"].str.lower()
-    t["token_b"] = t["token_b"].str.lower()
+    t["token_a"] = t["token_a"]
+    t["token_b"] = t["token_b"]
     t["trader_address"] = t["trader_address"].str.lower()
     t["pair_key"] = _pair_keys(t["token_a"], t["token_b"])
     t["trade_id"] = t.index
@@ -112,13 +112,18 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame):
     si = signals_df.set_index("request_id")
     s_ts, s_amt, s_bribe = si["ts"], si["quote_amount"], si["bribe"]
 
+    token_a_name = signals_df.columns[2]
+    token_b_name = signals_df.columns[3]
+    s_token_a = si[token_a_name]
+    s_token_b = si[token_b_name]
+
     matches = pd.DataFrame({
         "request_id": cand["request_id"].values,
         "hop_index": cand["hop_index"].values,
         "n_hops": cand["n_hops"].values,
         "signal_timestamp": cand["request_id"].map(s_ts).values,
-        "token_a": cand["token_in"].values,
-        "token_b": cand["token_out"].values,
+        "token_a": cand["request_id"].map(s_token_a).values,
+        "token_b": cand["request_id"].map(s_token_b).values,
         "signal_amount": cand["request_id"].map(s_amt).values,
         "signal_bribe": cand["request_id"].map(s_bribe).values,
         "signal_fee": cand["fee_rate"].values,
@@ -157,7 +162,9 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame):
     }).set_index("request_id")
 
     # Поля представителя (NaN, если трейдов у сигнала нет).
-    for col in ("token_a", "token_b", "signal_fee", "swap_timestamp",
+    summary["token_a"] = si[token_a_name]
+    summary["token_b"] = si[token_b_name]
+    for col in ("signal_fee", "swap_timestamp",
                 "swap_amount", "swap_user_id", "swap_bribe", "swap_fee"):
         summary[col] = rep[col] if col in rep else pd.NA
 
@@ -167,6 +174,14 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame):
     summary["n_trades"] = summary["n_trades"].fillna(0).astype(int)
     summary["covered"] = summary["covering_volume"] >= summary["signal_amount"]
 
+    numeric_cols = ["signal_amount", "signal_bribe", "signal_fee", 
+                    "swap_amount", "swap_bribe", "swap_fee", "covering_volume"]
+    for col in numeric_cols:
+        if col in summary.columns:
+            summary[col] = pd.to_numeric(summary[col], errors="coerce")
+        if col in matches.columns:
+            matches[col] = pd.to_numeric(matches[col], errors="coerce")
+    
     summary = summary.reset_index()[_SUMMARY_COLS]
     return summary, matches
 
