@@ -209,7 +209,7 @@ signals_coverage_rate = "0%"
 
 # ---- Колонки для таблицы сигналов ----
 signals_columns = {
-    "signal_timestamp": {"index": 0, "title": "Время сигнала"},
+    "signal_timestamp": {"index": 0, "title": "Время сигнала", "format": "yyyy-MM-dd HH:mm:ss"},
     "token_a": {"index": 1, "title": "Токен A"},
     "token_b": {"index": 2, "title": "Токен B"},
     "signal_amount": {"index": 3, "title": "Объём сигнала"},
@@ -217,7 +217,7 @@ signals_columns = {
     "route": {"index": 5, "title": "Путь","width": "450px"},
     "signal_bribe": {"index": 6, "title": "Bribe сигнала"},
     "signal_fee": {"index": 7, "title": "Fee сигнала"},
-    "swap_timestamp": {"index": 8, "title": "Время сделки"},
+    "swap_timestamp": {"index": 8, "title": "Время сделки", "format": "yyyy-MM-dd HH:mm:ss"},
     "swap_amount": {"index": 9, "title": "Объём сделки"},
     "swap_user_id": {"index": 10, "title": "ID пользователя"},
     "swap_bribe": {"index": 11, "title": "Bribe сделки"},
