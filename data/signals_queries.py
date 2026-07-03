@@ -3,7 +3,7 @@
 `get_signals_df` возвращает сырые кортежи из БД (исходный интерфейс);
 `get_signals` — обёртка под контракт `data/matching.py`: pandas DataFrame
 с колонками [request_id, ts, base_token, quote_token, quote_amount, bribe,
-target_block, route, potential_profit].
+target_block, route, profit].
 
 Подключение ленивое: создаётся при первом запросе (и пересоздаётся, если
 соединение закрыто), поэтому импорт модуля без живого Postgres безопасен.
@@ -35,7 +35,7 @@ def _get_connection():
                 port=int(os.getenv("PG_PORT", "5432")),
                 database=os.getenv("PG_DB", "mydb"),
                 user=os.getenv("PG_USER", "postgres"),
-                password=os.getenv("PG_PASSWORD", "mysecretpassword"),
+                password=os.getenv("PG_PASSWORD", "121205"),
             )
         except UnicodeDecodeError as exc:
             msg = exc.object.decode("cp1251", errors="replace")
@@ -95,7 +95,7 @@ def get_signals_df(limit=50, min_timestamp=0, max_timestamp=0xffffffffffffffff,
 
 # Порядок колонок соответствует SELECT в get_signals_df.
 _SIGNAL_COLS = ["request_id", "ts", "base_token", "quote_token", "quote_amount",
-                "bribe", "target_block", "route", "potential_profit"]
+                "bribe", "target_block", "route", "profit"]
 
 
 def get_signals(n=50, **kwargs) -> pd.DataFrame:
