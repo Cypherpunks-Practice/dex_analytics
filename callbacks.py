@@ -566,6 +566,16 @@ def apply_signals_filters(state, var_name=None, value=None):
     _signals_view(state)
 
 
+def apply_signals_window(state, var_name=None, value=None):
+    """«Диапазон блоков» меняет матчинг покрытия → нужен ПЕРЕЗАПРОС из БД.
+
+    В отличие от остальных фильтров (клиентские, `apply_signals_filters`), окно
+    влияет на само покрытие, поэтому здесь дёргаем `refresh_signals` (единственный
+    путь перезапроса, читает `state.filter_block_window`)."""
+    state.signals_current_page = 1
+    refresh_signals(state)
+
+
 def reset_signals_filters(state):
     """Сбрасывает все фильтры."""
     state.filter_status = "Все"
@@ -575,7 +585,8 @@ def reset_signals_filters(state):
     state.filter_block_window = 0
     state.filter_time_range = config.TIME_RANGES[config.DEFAULT_TIME_RANGE]
     state.signals_current_page = 1
-    _signals_view(state)
+    # Окно сброшено в 0 → покрытие меняется, поэтому перезапрос, а не только фильтр кэша.
+    refresh_signals(state)
 
 
 def export_signals_csv(state):

@@ -26,6 +26,7 @@ from callbacks import (
     admin_demote,
     admin_promote,
     apply_signals_filters,
+    apply_signals_window,
     change_signals_page_size,
     close_admin_dialog,
     export_signals_csv,
@@ -50,6 +51,7 @@ from callbacks import (
     show_signals,
     toggle_metric,
     toggle_sidebar,
+    refresh_signals,
 )
 import config
 
@@ -566,7 +568,7 @@ with tgb.Page() as page:
                         tgb.input(
                             value="{filter_block_window}",
                             label="Диап. блоков",
-                            on_change=apply_signals_filters,
+                            on_change=apply_signals_window,
                             change_delay=300,
                             class_name="filter-input"
                         )

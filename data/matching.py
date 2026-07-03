@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+from collections import defaultdict, deque
+
+import numpy as np
 import pandas as pd
 
 # Порядок колонок выходных фреймов — это контракт, на него садится UI.
+# swap_route — печатный фактический маршрут покрывающей сделки ("tokА → … → tokZ").
 _SUMMARY_COLS = [
     "request_id", "signal_timestamp", "base_token", "quote_token",
     "token_a", "token_b", "signal_amount", "signal_bribe", "signal_fee",
     "found_block", "n_hops", "swap_timestamp", "swap_amount", "swap_user_id",
-    "swap_bribe", "swap_fee", "covering_volume", "n_trades", "covered",
+    "swap_bribe", "swap_fee", "covering_volume", "n_trades", "swap_route", "covered",
 ]
 _MATCHES_COLS = [
     "request_id", "hop_index", "n_hops", "signal_timestamp", "token_a", "token_b",
@@ -65,19 +69,163 @@ def _explode_route(signals_df: pd.DataFrame) -> pd.DataFrame:
     return out[_SIG_KEY_COLS]
 
 
+def _signal_endpoints(signals_df: pd.DataFrame) -> pd.DataFrame:
+    """``request_id`` → концы маршрута сигнала (нижний регистр) + fee первого хопа.
+
+    ``start`` = ``token_in`` первого хопа, ``end`` = ``token_out`` последнего.
+    Это ЦЕЛЕВАЯ пара сигнала (начальный↔конечный токен), к которой сводится
+    покрытие. Пустой ``route`` → ``start=end=None`` (такой сигнал не покрывается).
+    Возвращает ``[request_id, start, end, n_hops, first_fee]``.
+    """
+    rows = []
+    for rid, route in zip(signals_df["request_id"].values, signals_df["route"].values):
+        if not route:
+            rows.append((rid, None, None, 0, np.nan))
+            continue
+        start = str(route[0]["token_in_address"]).lower()
+        end = str(route[-1]["token_out_address"]).lower()
+        rows.append((rid, start, end, len(route), route[0].get("fee_rate", np.nan)))
+    return pd.DataFrame(rows, columns=["request_id", "start", "end", "n_hops", "first_fee"])
+
+
+def _best_route(ta, tb, traders, usd, tid, i0, i1, start, end):
+    """Лучший покрывающий маршрут в срезе сделок ``[i0, i1)`` или ``None``.
+
+    Сделки среза группируем по игроку и в НЕОРИЕНТИРОВАННОМ графе токенов одного
+    игрока ищем BFS путь ``start → end``. Длина 1 = прямая сделка в целевой паре
+    (любой игрок); длина ≥2 = цепочка сделок ОДНОГО игрока (как route сигнала или
+    отличная). Лучший = кратчайший по числу сделок, при равенстве — максимальный
+    суммарный объём. get_trades не отдаёт направление свопа → граф неориентированный.
+    """
+    by_player = defaultdict(list)
+    for pos in range(i0, i1):
+        by_player[traders[pos]].append(pos)
+
+    best_key = None
+    best_rec = None
+    for player, positions in by_player.items():
+        adj = defaultdict(list)
+        for pos in positions:
+            adj[ta[pos]].append((tb[pos], pos))
+            adj[tb[pos]].append((ta[pos], pos))
+        if start not in adj:
+            continue
+        # BFS: token → (предыдущий token, позиция ребра-сделки).
+        prev = {start: (None, None)}
+        q = deque([start])
+        while q:
+            cur = q.popleft()
+            if cur == end:
+                break
+            for nb, pos in adj[cur]:
+                if nb not in prev:
+                    prev[nb] = (cur, pos)
+                    q.append(nb)
+        if end not in prev:
+            continue
+        # Реконструкция пути от end к start.
+        path_tokens, edge_pos, node = [], [], end
+        while node is not None:
+            path_tokens.append(node)
+            pnode, pos = prev[node]
+            if pos is not None:
+                edge_pos.append(pos)
+            node = pnode
+        path_tokens.reverse()
+        edge_pos.reverse()
+        vol = float(sum(usd[p] for p in edge_pos))
+        key = (len(edge_pos), -vol)
+        if best_key is None or key < best_key:
+            rep_pos = max(edge_pos, key=lambda p: usd[p])
+            best_key = key
+            best_rec = {
+                "covered": True,
+                "swap_route": " → ".join(path_tokens),
+                "swap_user_id": player,
+                "route_volume": vol,
+                "route_n_trades": len(edge_pos),
+                "rep_trade_id": tid[rep_pos],
+            }
+    return best_rec
+
+
+_COV_COLS = ["covered", "swap_route", "swap_user_id",
+             "route_volume", "route_n_trades", "rep_trade_id"]
+
+
+def _covering_routes(signals_df: pd.DataFrame, t: pd.DataFrame,
+                     block_window: int) -> pd.DataFrame:
+    """Для каждого сигнала — покрывающий маршрут в окне ``±block_window``.
+
+    Возвращает DataFrame (index=``request_id``) с колонками ``_COV_COLS`` только по
+    ПОКРЫТЫМ сигналам (остальные подмешиваются как not-covered в ``build_matches``).
+    Кандидаты сигнала = сделки с ``|block - found_block| <= block_window`` (быстрый
+    срез окна через ``searchsorted`` по отсортированному ``block_number``).
+    """
+    ep = _signal_endpoints(signals_df)
+    fb = signals_df.set_index("request_id")["found_block"]
+    empty = pd.DataFrame(columns=_COV_COLS, index=pd.Index([], name="request_id"))
+    if t.empty:
+        return empty
+
+    ts = t.sort_values("block_number").reset_index(drop=True)
+    blocks = ts["block_number"].to_numpy()
+    ta = ts["token_a"].to_numpy()
+    tb = ts["token_b"].to_numpy()
+    traders = ts["trader_address"].to_numpy()
+    usd = pd.to_numeric(ts["usd_amount"], errors="coerce").fillna(0.0).to_numpy()
+    tid = ts["trade_id"].to_numpy()
+
+    records = {}
+    for rid, start, end in zip(ep["request_id"].values,
+                               ep["start"].values, ep["end"].values):
+        if start is None or end is None or start == end:
+            continue
+        b = int(fb.get(rid))
+        i0 = int(np.searchsorted(blocks, b - block_window, side="left"))
+        i1 = int(np.searchsorted(blocks, b + block_window, side="right"))
+        if i1 <= i0:
+            continue
+        rec = _best_route(ta, tb, traders, usd, tid, i0, i1, start, end)
+        if rec is not None:
+            records[rid] = rec
+
+    if not records:
+        return empty
+    out = pd.DataFrame.from_dict(records, orient="index")[_COV_COLS]
+    out.index.name = "request_id"
+    return out
+
+
 def signal_pair_blocks(signals_df: pd.DataFrame) -> list[tuple[str, str, int]]:
     """Точный набор ``(token_lo, token_hi, block)`` для пушдауна в ClickHouse.
 
     Именно это отдаётся в ``get_trades`` — БД фильтрует свопы по
     ``(least(token_a,token_b), greatest(token_a,token_b), block_number) IN {...}``
     и возвращает только настоящих кандидатов (не декартово произведение блоки×токены).
+    Помимо пар хопов эмитим ЦЕЛЕВУЮ пару ``(start, end)`` каждого сигнала — иначе
+    прямые сделки целевой пары для multi-hop вообще не попали бы в выборку.
     """
+    parts = []
     sk = _explode_route(signals_df)
-    if sk.empty:
+    if not sk.empty:
+        lo = sk["pair_key"].str.split("|").str[0]
+        hi = sk["pair_key"].str.split("|").str[1]
+        parts.append(pd.DataFrame({"lo": lo.values, "hi": hi.values,
+                                   "block": sk["found_block"].values}))
+
+    ep = _signal_endpoints(signals_df)
+    ep = ep[ep["start"].notna() & ep["end"].notna() & (ep["start"] != ep["end"])]
+    if not ep.empty:
+        fb = signals_df.set_index("request_id")["found_block"]
+        tlo = ep["start"].where(ep["start"] <= ep["end"], ep["end"])
+        thi = ep["end"].where(ep["start"] <= ep["end"], ep["start"])
+        parts.append(pd.DataFrame({"lo": tlo.values, "hi": thi.values,
+                                   "block": ep["request_id"].map(fb).values}))
+
+    if not parts:
         return []
-    lo = sk["pair_key"].str.split("|").str[0]
-    hi = sk["pair_key"].str.split("|").str[1]
-    uniq = pd.DataFrame({"lo": lo, "hi": hi, "block": sk["found_block"]}).drop_duplicates()
+    uniq = pd.concat(parts, ignore_index=True).drop_duplicates()
     return list(uniq.itertuples(index=False, name=None))
 
 
@@ -85,43 +233,66 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame,
                   block_window: int = 0):
     """Сопоставить сигналы и трейды → ``(signal_summary_df, matches_df)``.
 
-    Матчинг: hash-join по ``pair_key`` + оконный фильтр по блоку
-    ``|block_number - found_block| <= block_window`` (``block_window`` приходит с
-    фронтенда; 0 = точное совпадение блока). Дедуп трейда в пределах сигнала,
-    covering_volume по максимальной ноге (без задвоения мультихопа), представитель
-    = трейд с максимальным ``swap_amount``.
+    ``matches_df`` — сырые сделки, совпавшие по паре хопа сигнала в окне
+    ``|block_number - found_block| <= block_window`` (hash-join по ``pair_key`` +
+    оконный фильтр); справочный слой.
 
-    Покрытие — по ФАКТУ наличия: сигнал покрыт, если по его паре есть хотя бы одна
-    сделка в окне ``±block_window`` (``covered = n_trades > 0``), объём не важен.
+    Покрытие (``covered`` + печатный ``swap_route``) считает ``_covering_routes``:
+    сигнал покрыт, если в окне ``±block_window`` есть путь ``start → end`` (целевая
+    пара) — прямая сделка в целевой паре ЛИБО цепочка сделок ОДНОГО игрока. Объём
+    на покрытие не влияет; ``covering_volume``/``n_trades`` описывают найденный
+    маршрут (сумма объёмов и число сделок пути), представитель ``swap_*`` — макс-
+    объёмная сделка этого маршрута.
     """
     sig_keys = _explode_route(signals_df)
 
     # Нормализация трейдов: lower адресов, канонический pair_key, устойчивый trade_id.
+    # lower() важен: боевой get_trades уже отдаёт нижний регистр (безвредно), но так
+    # матчинг устойчив к смешанному регистру и совпадает с ключами сигнала.
     t = trades_df.reset_index(drop=True).copy()
-    t["token_a"] = t["token_a"]
-    t["token_b"] = t["token_b"]
+    t["token_a"] = t["token_a"].str.lower()
+    t["token_b"] = t["token_b"].str.lower()
     t["trader_address"] = t["trader_address"].str.lower()
     t["pair_key"] = _pair_keys(t["token_a"], t["token_b"])
     t["trade_id"] = t.index
 
-    # Hash-join по паре (трейды уже сужены БД до нужных пар/диапазона блоков),
-    # затем оконный фильтр по расстоянию блока — так ловим сделки в ±block_window,
-    # а не только в точном found_block.
-    cand = sig_keys.merge(t, on="pair_key", how="inner")
-    if not cand.empty:
-        cand = cand[(cand["block_number"] - cand["found_block"]).abs() <= block_window]
-    # Один трейд учитывается сигналу один раз (страховка от мультихоп-совпадений пары
-    # и от нескольких блоков окна, попавших под один и тот же трейд).
-    cand = cand.drop_duplicates(["request_id", "trade_id"])
-
     # Сигнал-уровневые поля подмешиваем по request_id (без merge → без коллизий имён).
     si = signals_df.set_index("request_id")
     s_ts, s_amt, s_bribe = si["ts"], si["quote_amount"], si["bribe"]
+    # token_a/token_b в выдаче = ЦЕЛЕВАЯ пара сигнала (base/quote), по имени, не по позиции.
+    s_token_a = si["base_token"].str.lower()
+    s_token_b = si["quote_token"].str.lower()
 
-    token_a_name = signals_df.columns[2]
-    token_b_name = signals_df.columns[3]
-    s_token_a = si[token_a_name]
-    s_token_b = si[token_b_name]
+    # Hash-join по паре (трейды уже сужены БД до нужных пар/диапазона блоков),
+    # затем оконный фильтр по расстоянию блока → сырые matches (справочный слой).
+    # cand = sig_keys.merge(t, on="pair_key", how="inner")
+    # if not cand.empty:
+    #     cand = cand[(cand["block_number"] - cand["found_block"]).abs() <= block_window]
+    # cand = cand.drop_duplicates(["request_id", "trade_id"])
+
+
+    #-----------
+    # Разворачиваем трейды по окну блоков до слияния, чтобы избежать декартова взрыва
+    t_win_parts = []
+    for off in range(-block_window, block_window + 1):
+        part = t.copy()
+        part["cover_block"] = part["block_number"] + off
+        t_win_parts.append(part)
+    
+    if t_win_parts:
+        t_win = pd.concat(t_win_parts, ignore_index=True)
+    else:
+        t_win = pd.DataFrame(columns=t.columns.tolist() + ["cover_block"])
+
+    # Equi-join по ключу пары и целевому блоку (без пост-фильтрации)
+    cand = sig_keys.merge(
+        t_win, 
+        left_on=["pair_key", "found_block"], 
+        right_on=["pair_key", "cover_block"], 
+        how="inner"
+    )
+    cand = cand.drop_duplicates(["request_id", "trade_id"])
+    #------------------------------------
 
     matches = pd.DataFrame({
         "request_id": cand["request_id"].values,
@@ -144,19 +315,12 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame,
         "trade_id": cand["trade_id"].values,
     }, columns=_MATCHES_COLS)
 
-    # --- агрегаты по сигналу ---
-    # covering_volume: сумма по хопу, затем МАКСИМУМ по хопам (мультихоп не задваиваем).
-    hop_vol = matches.groupby(["request_id", "hop_index"])["swap_amount"].sum()
-    covering_volume = hop_vol.groupby("request_id").max()
-    n_trades = matches.groupby("request_id")["trade_id"].nunique()
-    # представитель = трейд с максимальным объёмом.
-    if not matches.empty:
-        rep = matches.loc[matches.groupby("request_id")["swap_amount"].idxmax()]
-        rep = rep.set_index("request_id")
-    else:
-        rep = matches.set_index("request_id")
+    # --- покрытие по маршруту (start→end в окне блоков) ---
+    cov = _covering_routes(signals_df, t, block_window)
+    ep = _signal_endpoints(signals_df).set_index("request_id")
+    t_by_id = t.set_index("trade_id")
 
-    # --- signal_summary_df: ВСЕ сигналы (left-join агрегатов) ---
+    # --- signal_summary_df: ВСЕ сигналы (left-join покрытия) ---
     summary = pd.DataFrame({
         "request_id": signals_df["request_id"].values,
         "signal_timestamp": signals_df["ts"].values,
@@ -168,28 +332,34 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame,
         "n_hops": signals_df["route"].apply(lambda r: len(r) if r else 0).values,
     }).set_index("request_id")
 
-    # Поля представителя (NaN, если трейдов у сигнала нет).
-    summary["token_a"] = si[token_a_name]
-    summary["token_b"] = si[token_b_name]
-    for col in ("signal_fee", "swap_timestamp",
-                "swap_amount", "swap_user_id", "swap_bribe", "swap_fee"):
-        summary[col] = rep[col] if col in rep else pd.NA
+    summary["token_a"] = s_token_a
+    summary["token_b"] = s_token_b
+    # signal_fee — fee первого хопа сигнала (атрибут сигнала, не сделки).
+    summary["signal_fee"] = ep["first_fee"]
 
-    summary["covering_volume"] = covering_volume
-    summary["covering_volume"] = summary["covering_volume"].fillna(0.0)
-    summary["n_trades"] = n_trades
-    summary["n_trades"] = summary["n_trades"].fillna(0).astype(int)
-    # Покрытие по факту наличия сделки в окне ±block_window (объём — справочно).
-    summary["covered"] = summary["n_trades"] > 0
+    # Поля покрытия (для не покрытых → not-covered / NaN / пустая строка).
+    # eq(True): NaN (не покрыт) → False, без FutureWarning про downcast на fillna.
+    summary["covered"] = cov["covered"].reindex(summary.index).eq(True)
+    summary["swap_route"] = cov["swap_route"].reindex(summary.index).fillna("")
+    summary["swap_user_id"] = cov["swap_user_id"].reindex(summary.index)
+    summary["covering_volume"] = cov["route_volume"].reindex(summary.index).fillna(0.0)
+    summary["n_trades"] = cov["route_n_trades"].reindex(summary.index).fillna(0).astype(int)
 
-    numeric_cols = ["signal_amount", "signal_bribe", "signal_fee", 
+    # Представитель swap_* — макс-объёмная сделка покрывающего маршрута (по rep_trade_id).
+    rep_id = cov["rep_trade_id"].reindex(summary.index)
+    summary["swap_amount"] = rep_id.map(t_by_id["usd_amount"])
+    summary["swap_bribe"] = rep_id.map(t_by_id["bribe"])
+    summary["swap_fee"] = rep_id.map(t_by_id["priority_fee"])
+    summary["swap_timestamp"] = rep_id.map(t_by_id["swap_timestamp"])
+
+    numeric_cols = ["signal_amount", "signal_bribe", "signal_fee",
                     "swap_amount", "swap_bribe", "swap_fee", "covering_volume"]
     for col in numeric_cols:
         if col in summary.columns:
             summary[col] = pd.to_numeric(summary[col], errors="coerce")
         if col in matches.columns:
             matches[col] = pd.to_numeric(matches[col], errors="coerce")
-    
+
     summary = summary.reset_index()[_SUMMARY_COLS]
     return summary, matches
 
@@ -214,10 +384,16 @@ def fetch_and_match(get_signals, get_trades, limit: int,
 # --------------------------------------------------------------------------- #
 if __name__ == "__main__":
     import datetime as _dt
+    import sys as _sys
 
-    UNI = "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984"
-    WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-    USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+    # swap_route содержит "→"; на Windows-консоли (cp1251) print иначе падает.
+    try:
+        _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+    # Различимые токены (по одной hex-цифре) — канонический порядок = алфавитный.
+    A, B, C, D, E = ("0x" + ch * 40 for ch in "abcde")
     t0 = _dt.datetime(2026, 5, 18, 12, 0, 0)
 
     def _hop(a, b, fee=0.003):
@@ -225,90 +401,101 @@ if __name__ == "__main__":
                 "decimals_in": 18, "decimals_out": 18,
                 "token_in_address": a, "token_out_address": b}
 
+    def _tr(block, a, b, usd, trader):
+        return dict(block_number=block, token_a=a, token_b=b, usd_amount=float(usd),
+                    trader_address=trader, bribe="1000000000", priority_fee="500",
+                    swap_timestamp=t0)
+
+    # base_token = конечный токен маршрута, quote_token = начальный (как в проде).
+    def _sig(rid, fb, route):
+        start = route[0]["token_in_address"] if route else A
+        end = route[-1]["token_out_address"] if route else A
+        return dict(request_id=rid, ts=t0, base_token=end, quote_token=start,
+                    quote_amount=1000.0, bribe=1.0, found_block=fb, route=route)
+
+    # Блоки сценариев разнесены на ≥100 → окна ±2 не пересекаются, токены изолированы.
     signals = pd.DataFrame([
-        # 1: single-hop, есть сделки → покрыт (covering_volume 600+500=1100)
-        dict(request_id=1, ts=t0, base_token=WETH, quote_token=UNI, quote_amount=1000.0,
-             bribe=1.0, found_block=100, route=[_hop(UNI, WETH)]),
-        # 2: single-hop, сделка есть, но объёма мало (400) → всё равно ПОКРЫТ (по факту)
-        dict(request_id=2, ts=t0, base_token=WETH, quote_token=UNI, quote_amount=1000.0,
-             bribe=1.0, found_block=201, route=[_hop(UNI, WETH)]),
-        # 3: multi-hop, ноги по ~1000; covering = max(1000,1000)=1000 (НЕ 2000)
-        dict(request_id=3, ts=t0, base_token=USDT, quote_token=UNI, quote_amount=1000.0,
-             bribe=1.0, found_block=302, route=[_hop(UNI, WETH), _hop(WETH, USDT, 0.0005)]),
-        # 4: без трейдов → не покрыт
-        dict(request_id=4, ts=t0, base_token=WETH, quote_token=UNI, quote_amount=1000.0,
-             bribe=1.0, found_block=403, route=[_hop(UNI, WETH)]),
-        # 5: пустой route — не даёт хопов, не матчится (сторож для explode + notna)
-        dict(request_id=5, ts=t0, base_token=WETH, quote_token=UNI, quote_amount=1000.0,
-             bribe=1.0, found_block=504, route=[]),
+        _sig(1, 100, [_hop(A, B)]),                       # single-hop, покрыт по факту
+        _sig(2, 201, [_hop(A, B)]),                       # single-hop, покрыт соседним блоком
+        _sig(3, 302, [_hop(A, B), _hop(B, C)]),           # multi-hop, прямая целевая пара {A,C}
+        _sig(4, 402, [_hop(A, B), _hop(B, D)]),           # multi-hop, цепочка = route сигнала
+        _sig(5, 502, [_hop(A, C), _hop(C, D)]),           # multi-hop, ОТЛИЧНАЯ цепочка A-E-D
+        _sig(6, 602, [_hop(A, B), _hop(B, C)]),           # multi-hop, есть лишь одна нога → НЕ покрыт
+        _sig(7, 702, [_hop(A, B), _hop(B, C)]),           # multi-hop, ноги у РАЗНЫХ игроков → НЕ покрыт
+        _sig(8, 802, []),                                 # пустой route → НЕ покрыт
     ])
 
     trades = pd.DataFrame([
-        # сигнал 1 (found_block 100), пара в перевёрнутом порядке/регистре — проверка pair_key
-        dict(block_number=100, token_a=WETH.lower(), token_b=UNI.lower(), usd_amount=600.0,
-             trader_address="0xShark1", bribe="1000000000", priority_fee="500", swap_timestamp=t0),
-        dict(block_number=100, token_a=UNI, token_b=WETH, usd_amount=500.0,
-             trader_address="0xShark1", bribe="2000000000", priority_fee="600", swap_timestamp=t0),
-        # сигнал 2 (found_block 201): сделка в СОСЕДНЕМ блоке 202 — ловится только окном ±N
-        dict(block_number=202, token_a=UNI, token_b=WETH, usd_amount=400.0,
-             trader_address="0xShark2", bribe="1", priority_fee="1", swap_timestamp=t0),
-        # сигнал 3 (found_block 302) — обе ноги, точный блок
-        dict(block_number=302, token_a=UNI, token_b=WETH, usd_amount=1000.0,
-             trader_address="0xShark3", bribe="1", priority_fee="1", swap_timestamp=t0),
-        dict(block_number=302, token_a=WETH, token_b=USDT, usd_amount=1000.0,
-             trader_address="0xShark3", bribe="1", priority_fee="1", swap_timestamp=t0),
-        # шум: правильная пара, но блок далеко за окном — не должен матчиться
-        dict(block_number=999, token_a=UNI, token_b=WETH, usd_amount=9999.0,
-             trader_address="0xNoise", bribe="1", priority_fee="1", swap_timestamp=t0),
+        # s1: единственная сделка в ВЕРХНЕМ регистре — проверка восстановленного lower()
+        _tr(100, A.upper(), B.upper(), 600.0, "0xShark1"),
+        _tr(202, A, B, 400.0, "0xShark2"),                # s2: соседний блок (202 vs 201)
+        _tr(302, A, C, 1500.0, "0xSharkD"),               # s3: прямая целевая пара {A,C}
+        _tr(402, A, B, 700.0, "0xP"),                     # s4: цепочка одного игрока P
+        _tr(402, B, D, 800.0, "0xP"),                     #     A-B-D
+        _tr(502, A, E, 300.0, "0xQ"),                     # s5: игрок Q идёт через E (не через C)
+        _tr(502, E, D, 400.0, "0xQ"),                     #     A-E-D ≠ route сигнала A-C-D
+        _tr(602, A, B, 999.0, "0xR"),                     # s6: только одна нога {A,B}
+        _tr(702, A, B, 100.0, "0xP1"),                    # s7: {A,B} у P1
+        _tr(702, B, C, 100.0, "0xP2"),                    # s7: {B,C} у P2 (другой игрок)
+        _tr(999, A, B, 9999.0, "0xNoise"),                # шум: блок далеко за окном
     ])
 
-    # Окно ±2: покрывает точные блоки (1,3) и соседний блок сигнала 2 (202 vs 201).
     summary, matches = build_matches(signals, trades, block_window=2)
+    s = summary.set_index("request_id")
 
-    # контракт колонок
+    # контракт колонок и размеры
     assert list(summary.columns) == _SUMMARY_COLS, summary.columns.tolist()
     assert list(matches.columns) == _MATCHES_COLS, matches.columns.tolist()
-    # 5 сигналов в summary, 5 матчей (2+1+2), шум не попал
-    assert len(summary) == 5, len(summary)
-    assert len(matches) == 5, len(matches)
-    assert 4 not in set(matches["request_id"]), "непокрытый сигнал не должен быть в matches"
-    assert 5 not in set(matches["request_id"]), "пустой route не должен давать матчей"
+    assert len(summary) == 8, len(summary)
 
-    s = summary.set_index("request_id")
-    # covered = по факту наличия сделки в окне (объём не важен)
-    assert bool(s.loc[1, "covered"]) is True
-    assert bool(s.loc[2, "covered"]) is True   # 400 < 1000, но сделка есть → покрыт
-    assert bool(s.loc[3, "covered"]) is True
-    assert bool(s.loc[4, "covered"]) is False
-    # мультихоп не задваивается
-    assert s.loc[3, "covering_volume"] == 1000.0, s.loc[3, "covering_volume"]
-    # single-hop = сумма сплитов
-    assert s.loc[1, "covering_volume"] == 1100.0, s.loc[1, "covering_volume"]
-    # представитель = максимальный трейд; в matches виден фактический блок сделки
-    assert s.loc[1, "swap_amount"] == 600.0, s.loc[1, "swap_amount"]
-    assert int(matches.set_index("request_id").loc[2, "swap_block"]) == 202
-    # непокрытый: swap_* пуст, счётчики по нулям
-    assert pd.isna(s.loc[4, "swap_amount"])
-    assert s.loc[4, "covering_volume"] == 0.0
-    assert int(s.loc[4, "n_trades"]) == 0
-    # пустой route: в summary есть, n_hops=0, не покрыт, swap пуст
-    assert bool(s.loc[5, "covered"]) is False
-    assert int(s.loc[5, "n_hops"]) == 0
-    assert pd.isna(s.loc[5, "swap_amount"])
-    # адреса приведены к нижнему регистру
+    # --- покрытие ---
+    assert bool(s.loc[1, "covered"]) is True   # single-hop, сделка есть (uppercase → lower)
+    assert bool(s.loc[2, "covered"]) is True   # single-hop, соседний блок в окне
+    assert bool(s.loc[3, "covered"]) is True   # multi-hop, прямая целевая пара {A,C}
+    assert bool(s.loc[4, "covered"]) is True   # multi-hop, цепочка A-B-D одного игрока
+    assert bool(s.loc[5, "covered"]) is True   # multi-hop, отличная цепочка A-E-D
+    assert bool(s.loc[6, "covered"]) is False  # только одна нога мультихопа
+    assert bool(s.loc[7, "covered"]) is False  # ноги у разных игроков
+    assert bool(s.loc[8, "covered"]) is False  # пустой route
+
+    # --- печатный маршрут (фактические токены пути) ---
+    assert s.loc[3, "swap_route"] == f"{A} → {C}", s.loc[3, "swap_route"]
+    assert s.loc[4, "swap_route"] == f"{A} → {B} → {D}", s.loc[4, "swap_route"]
+    assert s.loc[5, "swap_route"] == f"{A} → {E} → {D}", s.loc[5, "swap_route"]
+    assert s.loc[6, "swap_route"] == "" and s.loc[8, "swap_route"] == ""
+
+    # --- объём/число сделок = характеристики маршрута (не покрытие) ---
+    assert s.loc[1, "covering_volume"] == 600.0 and int(s.loc[1, "n_trades"]) == 1
+    assert s.loc[4, "covering_volume"] == 1500.0 and int(s.loc[4, "n_trades"]) == 2
+    assert s.loc[5, "covering_volume"] == 700.0 and int(s.loc[5, "n_trades"]) == 2
+    assert int(s.loc[6, "n_trades"]) == 0 and s.loc[6, "covering_volume"] == 0.0
+
+    # --- представитель = макс-объёмная сделка маршрута; игрок в нижнем регистре ---
+    assert s.loc[4, "swap_amount"] == 800.0 and s.loc[4, "swap_user_id"] == "0xp"
+    assert s.loc[5, "swap_amount"] == 400.0 and s.loc[5, "swap_user_id"] == "0xq"
     assert s.loc[1, "swap_user_id"] == "0xshark1"
-    # dtypes для сортировки
+    assert pd.isna(s.loc[6, "swap_amount"]) and pd.isna(s.loc[6, "swap_user_id"])
+
+    # --- signal_fee = fee первого хопа; пустой route → NaN ---
+    assert s.loc[1, "signal_fee"] == 0.003
+    assert pd.isna(s.loc[8, "signal_fee"])
+
+    # --- matches_df — справочный слой хоп-пар, развязан с покрытием ---
+    m_ids = set(matches["request_id"])
+    assert 8 not in m_ids                       # пустой route не даёт хоп-матчей
+    assert 3 not in m_ids                       # покрыт целевой парой {A,C} — не хоп-пара
+    assert {1, 2, 4, 6, 7} <= m_ids             # сделки на хоп-парах (в т.ч. непокрытых 6,7)
+
+    # dtypes для сортировки на фронте
     assert pd.api.types.is_float_dtype(summary["signal_amount"])
     assert pd.api.types.is_integer_dtype(summary["found_block"])
     assert pd.api.types.is_datetime64_any_dtype(summary["signal_timestamp"])
 
-    # --- граница окна: тот же набор сигналов/трейдов при block_window=0 ---------
-    # Сигнал 2 (сделка в блоке 202, found_block 201) при точном матче НЕ покрыт,
-    # а шум/дальние блоки как и раньше отсекаются.
-    summary0 = build_matches(signals, trades, block_window=0)[0].set_index("request_id")
-    assert bool(summary0.loc[1, "covered"]) is True    # точный блок 100
-    assert bool(summary0.loc[2, "covered"]) is False   # 202 вне ±0 от 201
-    assert bool(summary0.loc[3, "covered"]) is True    # точный блок 302
+    # --- граница окна: block_window=0 → сосед s2 (202 vs 201) уже НЕ покрыт ---
+    s0 = build_matches(signals, trades, block_window=0)[0].set_index("request_id")
+    assert bool(s0.loc[1, "covered"]) is True   # точный блок 100
+    assert bool(s0.loc[2, "covered"]) is False  # 202 вне ±0 от 201
+    assert bool(s0.loc[4, "covered"]) is True   # цепочка в точном блоке 402
 
     print("OK: все проверки пройдены")
     print(summary.to_string(index=False))

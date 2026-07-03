@@ -20,13 +20,27 @@ import config
 from data import clickhouse, matching, new_queries, signals_queries
 
 
+def _as_block_window(value) -> int:
+    """`block_window` с фронтенда приходит строкой (tgb.input); приводим к int.
+
+    Пусто / мусор / отрицательное → дефолт `config.SIGNAL_BLOCK_WINDOW`.
+    """
+    try:
+        n = int(str(value).strip())
+    except (TypeError, ValueError):
+        return config.SIGNAL_BLOCK_WINDOW
+    return n if n >= 0 else config.SIGNAL_BLOCK_WINDOW
+
+
 def get_signal_matches(limit: int = config.SIGNALS_LIMIT,
                        block_window: int = config.SIGNAL_BLOCK_WINDOW):
     """(summary_df, matches_df) — контракт см. в `data/matching.py`.
 
     ``block_window`` — окно покрытия ±N блоков от found_block сигнала (значение
-    приходит с фронтенда; по умолчанию `config.SIGNAL_BLOCK_WINDOW`).
+    приходит с фронтенда строкой; нормализуем к int, по умолчанию
+    `config.SIGNAL_BLOCK_WINDOW`).
     """
+    block_window = _as_block_window(block_window)
     if clickhouse.USE_STUB:
         signals_df, trades_df = _stub_signals_and_trades(limit)
         return matching.build_matches(signals_df, trades_df, block_window=block_window)
