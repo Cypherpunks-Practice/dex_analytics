@@ -220,10 +220,11 @@ signals_columns = {
     "signal_fee": {"index": 8, "title": "Fee сигнала"},
     "swap_timestamp": {"index": 9, "title": "Время сделки", "format": "yyyy-MM-dd HH:mm:ss"},
     "swap_block": {"index": 10, "title": "Блок сделки"},
-    "swap_amount": {"index": 11, "title": "Объём сделки"},
-    "swap_user_id": {"index": 12, "title": "ID пользователя"},
-    "swap_bribe": {"index": 13, "title": "Bribe сделки"},
-    "swap_fee": {"index": 14, "title": "Fee сделки"},
+    "swap_route_str": {"index": 11, "title": "Путь сделки", "width": "450px"},
+    "swap_amount": {"index": 12, "title": "Объём сделки"},
+    "swap_user_id": {"index": 13, "title": "ID пользователя"},
+    "swap_bribe": {"index": 14, "title": "Bribe сделки"},
+    "swap_fee": {"index": 15, "title": "Fee сделки"},
 }
 # ---------------------------------------------------------------------------
 # Хелперы для выражений шаблона

@@ -13,7 +13,7 @@ _SUMMARY_COLS = [
     "token_a", "token_b", "signal_amount", "signal_bribe", "signal_fee",
     "found_block", "n_hops", "swap_timestamp", "swap_amount", "swap_user_id",
     "swap_bribe", "swap_fee", "covering_volume", "n_trades", "swap_route", "covered",
-    "route", "profit", "swap_block",
+    "route", "profit", "swap_block", "swap_route_str",
 ]
 _MATCHES_COLS = [
     "request_id", "hop_index", "n_hops", "signal_timestamp", "token_a", "token_b",
@@ -153,6 +153,24 @@ def _best_route(ta, tb, traders, usd, tid, i0, i1, start, end):
 
 _COV_COLS = ["covered", "swap_route", "swap_user_id",
              "route_volume", "route_n_trades", "rep_trade_id"]
+
+
+def _path_to_named(path_str: str, tokens_dict: dict) -> str:
+    """«addr → addr → addr» → «symA -> symB | symB -> symC» (формат пути сигнала).
+
+    Формат и фолбэк символа (``addr[:10] + "..."``) совпадают с ``_route_to_str``,
+    чтобы столбец «Путь сделки» выглядел как «Путь» сигнала.
+    """
+    if not path_str:
+        return ""
+    toks = path_str.split(" → ")
+
+    def _sym(a):
+        a = (a or "").lower()
+        return tokens_dict.get(a, a[:10] + "...")
+
+    return " | ".join(f"{_sym(toks[i])} -> {_sym(toks[i + 1])}"
+                      for i in range(len(toks) - 1))
 
 
 def _covering_routes(signals_df: pd.DataFrame, t: pd.DataFrame,
@@ -348,6 +366,9 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame,
     # eq(True): NaN (не покрыт) → False, без FutureWarning про downcast на fillna.
     summary["covered"] = cov["covered"].reindex(summary.index).eq(True)
     summary["swap_route"] = cov["swap_route"].reindex(summary.index).fillna("")
+    # Печатный путь покрывающих сделок в формате пути сигнала (именованные токены).
+    summary["swap_route_str"] = summary["swap_route"].apply(
+        lambda s: _path_to_named(s, tokens_dict))
     summary["swap_user_id"] = cov["swap_user_id"].reindex(summary.index)
     summary["covering_volume"] = cov["route_volume"].reindex(summary.index).fillna(0.0)
     summary["n_trades"] = cov["route_n_trades"].reindex(summary.index).fillna(0).astype(int)
