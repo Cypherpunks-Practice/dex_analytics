@@ -799,3 +799,11 @@ def get_area_by_shark(filters: dict, metric: str, limit: int = config.AREA_SHARK
         ORDER BY time
     """
     return _pivot_wide(clickhouse.execute(sql, params), "time")
+
+
+def get_tokens_dict() -> dict:
+    sql = """
+        SELECT contract_address, label FROM tokens
+    """
+    df = clickhouse.execute(sql)
+    return dict(zip(df["contract_address"].str.lower(), df["label"]))

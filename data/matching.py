@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+from . import queries
 
 # Порядок колонок выходных фреймов — это контракт, на него садится UI.
 _SUMMARY_COLS = [
@@ -64,12 +65,6 @@ def _explode_route(signals_df: pd.DataFrame) -> pd.DataFrame:
     out["n_hops"] = out.groupby("request_id")["hop_index"].transform("size")
     return out[_SIG_KEY_COLS]
 
-def _route_to_str(r):
-        if not r:
-            return ""
-        pairs = [f"{h['token_in_address']} -> {h['token_out_address']}" for h in r]
-        return " | ".join(pairs)
-
 
 def signal_pair_blocks(signals_df: pd.DataFrame) -> list[tuple[str, str, int]]:
     """Точный набор ``(token_lo, token_hi, block)`` для пушдауна в ClickHouse.
@@ -94,7 +89,9 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame):
     дедуп трейда в пределах сигнала, покрытие по максимальной ноге (без задвоения
     мультихопа), представитель = трейд с максимальным ``swap_amount``.
     """
-    sig_keys = _explode_route(signals_df)
+    sig_keys = _explode_route(signals_df)    
+
+    tokens_dict = queries.get_tokens_dict()   
 
     # Нормализация трейдов: lower адресов, канонический pair_key, устойчивый trade_id.
     t = trades_df.reset_index(drop=True).copy()
@@ -187,11 +184,25 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame):
             summary[col] = pd.to_numeric(summary[col], errors="coerce")
         if col in matches.columns:
             matches[col] = pd.to_numeric(matches[col], errors="coerce")
+
+    def _route_to_str(r):
+        if not r:
+            return ""
+        pairs = []
+        for h in r:
+                addr_in = h.get("token_in_address", "").lower()
+                addr_out = h.get("token_out_address", "").lower()
+                symbol_in = tokens_dict.get(addr_in, addr_in[:10] + "...")
+                symbol_out = tokens_dict.get(addr_out, addr_out[:10] + "...")
+                pairs.append(f"{symbol_in} -> {symbol_out}")
+        return " | ".join(pairs)
     
     summary["route"] = signals_df["route"].apply(_route_to_str).values
     summary = summary.reset_index()[_SUMMARY_COLS]
 
-    #print(summary.iloc[0])
+    print(summary.iloc[0])
+    print(summary.iloc[1])
+    print(summary.iloc[2])
     return summary, matches
 
 
