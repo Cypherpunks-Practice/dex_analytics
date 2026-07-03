@@ -3,7 +3,7 @@
 `get_signals_df` возвращает сырые кортежи из БД (исходный интерфейс);
 `get_signals` — обёртка под контракт `data/matching.py`: pandas DataFrame
 с колонками [request_id, ts, base_token, quote_token, quote_amount, bribe,
-target_block, route, potential_profit].
+found_block, route, potential_profit].
 
 Подключение ленивое: создаётся при первом запросе (и пересоздаётся, если
 соединение закрыто), поэтому импорт модуля без живого Postgres безопасен.
@@ -95,7 +95,7 @@ def get_signals_df(limit=50, min_timestamp=0, max_timestamp=0xffffffffffffffff,
 
 # Порядок колонок соответствует SELECT в get_signals_df.
 _SIGNAL_COLS = ["request_id", "ts", "base_token", "quote_token", "quote_amount",
-                "bribe", "target_block", "route", "potential_profit"]
+                "bribe", "found_block", "route", "potential_profit"]
 
 
 def get_signals(n=50, **kwargs) -> pd.DataFrame:
@@ -103,7 +103,7 @@ def get_signals(n=50, **kwargs) -> pd.DataFrame:
 
     Нормализация: `ts` → datetime (числовой epoch: секунды/миллисекунды
     определяются по величине), `route` → list[dict] (json.loads, если БД отдала
-    строку), числовые типы target_block/quote_amount фиксируются.
+    строку), числовые типы found_block/quote_amount фиксируются.
     """
     df = pd.DataFrame(get_signals_df(limit=n, **kwargs), columns=_SIGNAL_COLS)
     if df.empty:
@@ -114,7 +114,7 @@ def get_signals(n=50, **kwargs) -> pd.DataFrame:
         df["ts"] = pd.to_datetime(ts, unit=unit)
     df["route"] = df["route"].apply(
         lambda r: json.loads(r) if isinstance(r, str) else r)
-    df["target_block"] = df["target_block"].astype("int64")
+    df["found_block"] = df["found_block"].astype("int64")
     df["quote_amount"] = df["quote_amount"].astype(float)
 
     return df

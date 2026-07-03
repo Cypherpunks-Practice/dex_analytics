@@ -183,6 +183,7 @@ filter_status = "Все"
 filter_token = ""
 filter_min_volume = ""
 filter_max_volume = ""
+filter_block_window = 0
 filter_time_range = config.TIME_RANGES[config.DEFAULT_TIME_RANGE]
 
 # Пагинация
@@ -499,7 +500,7 @@ with tgb.Page() as page:
     with tgb.part(render="{logged_in and current_page == 'signals'}", class_name="signals-shell"):
 
         # ---- Topbar spécifique Signals ----
-        with tgb.part(class_name="signals-topbar"):
+        with tgb.part(class_name="topbar"):
 
             with tgb.part(class_name="nav-bar"):
                 tgb.button("Dashboard", on_action=show_dashboard, class_name="admin-btn")
@@ -538,7 +539,10 @@ with tgb.Page() as page:
             # Фильтры
             with tgb.part(class_name="signals-filters"):
                 tgb.text("## Фильтры", mode="md")
-                with tgb.layout("1fr 1fr 1fr 1fr 1fr", class_name="filters-grid"):
+                
+                # Изменили разметку на 7 колонок, чтобы блоки поместились в один ряд
+                with tgb.layout("15% 20% 15% 15% 18% 17%", class_name="filters-grid"):
+                    
                     with tgb.part():
                         tgb.text("Статус", mode="md", class_name="filter-label")
                         tgb.selector(
@@ -558,6 +562,16 @@ with tgb.Page() as page:
                             class_name="filter-input"
                         )
                     with tgb.part():
+                        tgb.text("Диапазон блоков", mode="md", class_name="filter-label")
+                        tgb.input(
+                            value="{filter_block_window}",
+                            label="Диап. блоков",
+                            on_change=apply_signals_filters,
+                            change_delay=300,
+                            class_name="filter-input"
+                        )
+                        
+                    with tgb.part():
                         tgb.text("Объём мин.", mode="md", class_name="filter-label")
                         tgb.input(
                             value="{filter_min_volume}",
@@ -575,6 +589,12 @@ with tgb.Page() as page:
                             change_delay=300,
                             class_name="filter-input"
                         )
+                    
+                    # ---- НОВЫЕ ПОЛЯ: ДИАПАЗОН БЛОКОВ ----
+                    
+                    
+                    # -------------------------------------
+
                     with tgb.part():
                         tgb.text("Дата", mode="md", class_name="filter-label")
                         tgb.selector(
@@ -588,7 +608,7 @@ with tgb.Page() as page:
                 with tgb.layout("auto auto", class_name="filter-actions"):
                     tgb.button("Сбросить", on_action=reset_signals_filters, class_name="reset-btn")
                     tgb.button("Экспорт CSV", on_action=export_signals_csv, class_name="export-btn")
-            
+
             # Таблица
             with tgb.part(class_name="signals-table-section"):
                 with tgb.layout("1fr auto", class_name="table-header"):
@@ -607,7 +627,8 @@ with tgb.Page() as page:
                     data="{signals_display_data}",
                     columns="{signals_columns}",
                     rebuild=True,
-                    page_size=0,    
+                    page_size=0, 
+   
                     page_size_options=[10, 50, 100, 500],
                     on_action=on_signal_row_click
                 )

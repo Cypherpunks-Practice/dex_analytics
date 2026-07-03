@@ -101,4 +101,5 @@ def get_trades(pair_blocks, use_stub: bool = False, window_size: int = 2) -> pd.
     # падает на t["token_a"] с KeyError.
     result = clickhouse.execute(
         query, {"minb": min_block, "maxb": max_block, "pairs": pair_keys})
+    print(result.head())
     return result if not result.empty else pd.DataFrame(columns=columns)
