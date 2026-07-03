@@ -184,6 +184,7 @@ filter_token = ""
 filter_block_window = 0
 filter_min_volume = ""
 filter_max_volume = ""
+filter_block_window = 0
 filter_time_range = config.TIME_RANGES[config.DEFAULT_TIME_RANGE]
 
 # Пагинация

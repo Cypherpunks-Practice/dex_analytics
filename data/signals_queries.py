@@ -3,7 +3,7 @@
 `get_signals_df` возвращает сырые кортежи из БД (исходный интерфейс);
 `get_signals` — обёртка под контракт `data/matching.py`: pandas DataFrame
 с колонками [request_id, ts, base_token, quote_token, quote_amount, bribe,
-target_block, route, potential_profit].
+found_block, route, potential_profit].
 
 Подключение ленивое: создаётся при первом запросе (и пересоздаётся, если
 соединение закрыто), поэтому импорт модуля без живого Postgres безопасен.
@@ -35,7 +35,7 @@ def _get_connection():
                 port=int(os.getenv("PG_PORT", "5432")),
                 database=os.getenv("PG_DB", "mydb"),
                 user=os.getenv("PG_USER", "postgres"),
-                password=os.getenv("PG_PASSWORD", "mysecretpassword"),
+                password=os.getenv("PG_PASSWORD", "121205"),
             )
         except UnicodeDecodeError as exc:
             msg = exc.object.decode("cp1251", errors="replace")
@@ -78,7 +78,7 @@ def get_signals_df(limit=50, min_timestamp=0, max_timestamp=0xffffffffffffffff,
     params.append(limit)
 
     cursor.execute(f'''SELECT swaps_request.id, swaps_request.timestamp, base_token,
-                    quote_token, quote_amount, bribe, target_block, route, potential_profit
+                    quote_token, quote_amount, bribe, found_block, route, potential_profit
                     FROM arbitrages JOIN swaps_request ON arbitrages.id=swaps_request.arbitrage_id
                     JOIN swaps_request_dex ON swaps_request_dex.id = swaps_request.id
                     WHERE type = 'DECENTRALIZED' AND
@@ -95,7 +95,7 @@ def get_signals_df(limit=50, min_timestamp=0, max_timestamp=0xffffffffffffffff,
 
 # Порядок колонок соответствует SELECT в get_signals_df.
 _SIGNAL_COLS = ["request_id", "ts", "base_token", "quote_token", "quote_amount",
-                "bribe", "target_block", "route", "potential_profit"]
+                "bribe", "found_block", "route", "potential_profit"]
 
 
 def get_signals(n=50, **kwargs) -> pd.DataFrame:
@@ -103,7 +103,7 @@ def get_signals(n=50, **kwargs) -> pd.DataFrame:
 
     Нормализация: `ts` → datetime (числовой epoch: секунды/миллисекунды
     определяются по величине), `route` → list[dict] (json.loads, если БД отдала
-    строку), числовые типы target_block/quote_amount фиксируются.
+    строку), числовые типы found_block/quote_amount фиксируются.
     """
     df = pd.DataFrame(get_signals_df(limit=n, **kwargs), columns=_SIGNAL_COLS)
     if df.empty:
@@ -114,6 +114,7 @@ def get_signals(n=50, **kwargs) -> pd.DataFrame:
         df["ts"] = pd.to_datetime(ts, unit=unit)
     df["route"] = df["route"].apply(
         lambda r: json.loads(r) if isinstance(r, str) else r)
-    df["target_block"] = df["target_block"].astype("int64")
+    df["found_block"] = df["found_block"].astype("int64")
     df["quote_amount"] = df["quote_amount"].astype(float)
+
     return df
