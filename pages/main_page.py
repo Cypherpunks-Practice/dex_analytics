@@ -52,9 +52,16 @@ from callbacks import (
     toggle_metric,
     toggle_sidebar,
     refresh_signals,
+    prev_signals_page,
+    next_signals_page,
+    apply_signals_filters,
+    reset_signals_filters,
+    export_signals_csv,
+    on_signal_row_click,
+    change_signals_page_size,
 )
 import config
-
+csv_file = ""
 
 # ---------------------------------------------------------------------------
 # Привязываемые переменные состояния (начальные значения)
@@ -205,6 +212,8 @@ signals_columns = {
     "token_a": {"index": 1, "title": "Токен A"},
     "token_b": {"index": 2, "title": "Токен B"},
     "signal_amount": {"index": 3, "title": "Объём сигнала"},
+    "profit": {"index": 4, "title": "Профит"}, 
+    "route": {"index": 5, "title": "Путь","width": "450px"},
     "signal_bribe": {"index": 4, "title": "Bribe сигнала"},
     "signal_fee": {"index": 5, "title": "Fee сигнала"},
     "swap_timestamp": {"index": 6, "title": "Время сделки"},
@@ -273,9 +282,7 @@ with tgb.Page() as page:
                       on_action=login)
             tgb.button("Войти", on_action=login)
 
-    # ================================================================
-    # PAGE DASHBOARD (avec sidebar)
-    # ================================================================
+     # ---------- dashboard-----------------
     with tgb.part(render="{logged_in and current_page == 'dashboard'}", class_name="shell"):
 
         # ---------- Свёрнутая панель: узкая полоска со стрелкой > ----------
@@ -496,13 +503,11 @@ with tgb.Page() as page:
                 with tgb.part(class_name="card"):
                     tgb.chart(figure="{fig_area2}")
 
-    # ================================================================
-    # PAGE SIGNALS (SANS sidebar - pleine largeur)
-    # ================================================================
+# ---- Signals ----
     with tgb.part(render="{logged_in and current_page == 'signals'}", class_name="signals-shell"):
 
-        # ---- Topbar spécifique Signals ----
-        with tgb.part(class_name="topbar"):
+        
+        with tgb.part(class_name="signals-topbar"):
 
             with tgb.part(class_name="nav-bar"):
                 tgb.button("Dashboard", on_action=show_dashboard, class_name="admin-btn")
@@ -610,27 +615,18 @@ with tgb.Page() as page:
                 with tgb.layout("auto auto", class_name="filter-actions"):
                     tgb.button("Сбросить", on_action=reset_signals_filters, class_name="reset-btn")
                     tgb.button("Экспорт CSV", on_action=export_signals_csv, class_name="export-btn")
-
+                    tgb.file_download(content="{csv_file}",label="Download CSV")
+            
             # Таблица
             with tgb.part(class_name="signals-table-section"):
                 with tgb.layout("1fr auto", class_name="table-header"):
                     tgb.text("## Таблица сигналов", mode="md")
-                    with tgb.part(class_name="table-controls"):
-                        tgb.text("Строк:", class_name="label")
-                        tgb.selector(
-                            value="{signals_page_size}",
-                            lov=[500, 1000, 5000, 10000, 50000, 100000],
-                            dropdown=True,
-                            on_change=change_signals_page_size,
-                            class_name="page-size-select"
-                        )
-                
+                    
                 tgb.table(
                     data="{signals_display_data}",
                     columns="{signals_columns}",
                     rebuild=True,
                     page_size=0, 
-   
                     page_size_options=[10, 50, 100, 500],
                     on_action=on_signal_row_click
                 )

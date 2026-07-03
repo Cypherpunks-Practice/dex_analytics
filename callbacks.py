@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import pandas as pd
 from taipy.gui import notify
+import tempfile
 
 import config
 import viz
@@ -588,17 +589,40 @@ def reset_signals_filters(state):
     # Окно сброшено в 0 → покрытие меняется, поэтому перезапрос, а не только фильтр кэша.
     refresh_signals(state)
 
+def on_signal_row_click(state, action=None, info=None):
+    pass
+
+
 
 def export_signals_csv(state):
-    """Экспорт в CSV (заглушка)."""
-    if state.signals_full_data.empty:
+    if state.signals_display_data.empty:
+        notify(state, "warning", "No data")
         return
-    # TODO: реализовать экспорт CSV
-    pass
 
+    tmp = tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=".csv",
+        mode="w",
+        encoding="utf-8",
+        newline=""
+    )
+    df = state.signals_display_data.copy()
 
-def on_signal_row_click(state, action=None, info=None):
-    """Обработка клика по строке (заглушка)."""
-    pass
+df.rename(
+    columns={
+        key: value["title"]
+        for key, value in state.signals_columns.items()
+    },
+    inplace=True,
+)
 
+    state.signals_display_data.to_csv(tmp.name, index=False)
+    tmp.close()
 
+    state.csv_file = tmp.name
+
+    notify(
+        state,
+        "success",
+        f"Export of {len(state.signals_display_data)} lines"
+    )

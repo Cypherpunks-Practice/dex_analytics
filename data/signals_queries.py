@@ -35,7 +35,7 @@ def _get_connection():
                 port=int(os.getenv("PG_PORT", "5432")),
                 database=os.getenv("PG_DB", "mydb"),
                 user=os.getenv("PG_USER", "postgres"),
-                password=os.getenv("PG_PASSWORD", "121205"),
+                password=os.getenv("PG_PASSWORD", "mysecretpassword"),
             )
         except UnicodeDecodeError as exc:
             msg = exc.object.decode("cp1251", errors="replace")
