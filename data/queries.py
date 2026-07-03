@@ -802,6 +802,10 @@ def get_area_by_shark(filters: dict, metric: str, limit: int = config.AREA_SHARK
 
 
 def get_tokens_dict() -> dict:
+    # Офлайн-режим: без БД возвращаем пустой словарь — _route_to_str в matching.py
+    # тогда печатает укороченные адреса вместо символов (см. контракт USE_STUB).
+    if clickhouse.USE_STUB:
+        return {}
     sql = """
         SELECT contract_address, label FROM tokens
     """

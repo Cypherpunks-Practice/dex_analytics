@@ -212,15 +212,15 @@ signals_columns = {
     "token_a": {"index": 1, "title": "Токен A"},
     "token_b": {"index": 2, "title": "Токен B"},
     "signal_amount": {"index": 3, "title": "Объём сигнала"},
-    "profit": {"index": 4, "title": "Профит"}, 
+    "profit": {"index": 4, "title": "Профит"},
     "route": {"index": 5, "title": "Путь","width": "450px"},
-    "signal_bribe": {"index": 4, "title": "Bribe сигнала"},
-    "signal_fee": {"index": 5, "title": "Fee сигнала"},
-    "swap_timestamp": {"index": 6, "title": "Время сделки"},
-    "swap_amount": {"index": 7, "title": "Объём сделки"},
-    "swap_user_id": {"index": 8, "title": "ID пользователя"},
-    "swap_bribe": {"index": 9, "title": "Bribe сделки"},
-    "swap_fee": {"index": 10, "title": "Fee сделки"},
+    "signal_bribe": {"index": 6, "title": "Bribe сигнала"},
+    "signal_fee": {"index": 7, "title": "Fee сигнала"},
+    "swap_timestamp": {"index": 8, "title": "Время сделки"},
+    "swap_amount": {"index": 9, "title": "Объём сделки"},
+    "swap_user_id": {"index": 10, "title": "ID пользователя"},
+    "swap_bribe": {"index": 11, "title": "Bribe сделки"},
+    "swap_fee": {"index": 12, "title": "Fee сделки"},
 }
 # ---------------------------------------------------------------------------
 # Хелперы для выражений шаблона

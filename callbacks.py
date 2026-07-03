@@ -607,16 +607,15 @@ def export_signals_csv(state):
         newline=""
     )
     df = state.signals_display_data.copy()
+    df.rename(
+        columns={
+            key: value["title"]
+            for key, value in state.signals_columns.items()
+        },
+        inplace=True,
+    )
 
-df.rename(
-    columns={
-        key: value["title"]
-        for key, value in state.signals_columns.items()
-    },
-    inplace=True,
-)
-
-    state.signals_display_data.to_csv(tmp.name, index=False)
+    df.to_csv(tmp.name, index=False)
     tmp.close()
 
     state.csv_file = tmp.name

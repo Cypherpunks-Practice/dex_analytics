@@ -3,11 +3,7 @@
 `get_signals_df` возвращает сырые кортежи из БД (исходный интерфейс);
 `get_signals` — обёртка под контракт `data/matching.py`: pandas DataFrame
 с колонками [request_id, ts, base_token, quote_token, quote_amount, bribe,
-<<<<<<< HEAD
-found_block, route, potential_profit].
-=======
-target_block, route, profit].
->>>>>>> origin/Helen
+found_block, route, profit].
 
 Подключение ленивое: создаётся при первом запросе (и пересоздаётся, если
 соединение закрыто), поэтому импорт модуля без живого Postgres безопасен.

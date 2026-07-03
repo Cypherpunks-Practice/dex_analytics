@@ -107,6 +107,7 @@ def _stub_signals_and_trades(limit: int):
             base_token=route[-1]["token_out_address"], quote_token=a,
             quote_amount=amount, bribe=float(rng.uniform(0, 2)),
             found_block=block, route=route,
+            profit=float(rng.uniform(-500, 5_000)),
         ))
         if rng.random() < 0.6:                           # покрывающие трейды
             for hop in route:

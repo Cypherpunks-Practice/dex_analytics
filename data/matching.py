@@ -13,6 +13,7 @@ _SUMMARY_COLS = [
     "token_a", "token_b", "signal_amount", "signal_bribe", "signal_fee",
     "found_block", "n_hops", "swap_timestamp", "swap_amount", "swap_user_id",
     "swap_bribe", "swap_fee", "covering_volume", "n_trades", "swap_route", "covered",
+    "route", "profit",
 ]
 _MATCHES_COLS = [
     "request_id", "hop_index", "n_hops", "signal_timestamp", "token_a", "token_b",
@@ -277,14 +278,6 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame,
     s_token_a = si["base_token"].str.lower()
     s_token_b = si["quote_token"].str.lower()
 
-    # Hash-join по паре (трейды уже сужены БД до нужных пар/диапазона блоков),
-    # затем оконный фильтр по расстоянию блока → сырые matches (справочный слой).
-    # cand = sig_keys.merge(t, on="pair_key", how="inner")
-    # if not cand.empty:
-    #     cand = cand[(cand["block_number"] - cand["found_block"]).abs() <= block_window]
-    # cand = cand.drop_duplicates(["request_id", "trade_id"])
-
-
     #-----------
     # Разворачиваем трейды по окну блоков до слияния, чтобы избежать декартова взрыва
     t_win_parts = []
@@ -374,7 +367,9 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame,
     # summary["n_trades"] = summary["n_trades"].fillna(0).astype(int)
     # summary["covered"] = summary["covering_volume"] >= summary["signal_amount"]
     summary["route"] = signals_df["route"].apply(_route_to_str).values
-    summary["profit"] = signals_df["profit"].values
+    # profit — атрибут сигнала из Postgres; в стабе/self-test его может не быть.
+    summary["profit"] = (signals_df["profit"].values
+                         if "profit" in signals_df.columns else np.nan)
 
     numeric_cols = ["signal_amount", "signal_bribe", "signal_fee", 
                     "swap_amount", "swap_bribe", "swap_fee", "covering_volume", "profit"]
@@ -386,8 +381,8 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame,
     
     summary = summary.reset_index()[_SUMMARY_COLS]
 
-    print(summary.iloc[0])
-    print(summary.iloc[1])
+    # print(summary.iloc[0])
+    # print(summary.iloc[1])
     return summary, matches
 
 
@@ -438,7 +433,8 @@ if __name__ == "__main__":
         start = route[0]["token_in_address"] if route else A
         end = route[-1]["token_out_address"] if route else A
         return dict(request_id=rid, ts=t0, base_token=end, quote_token=start,
-                    quote_amount=1000.0, bribe=1.0, found_block=fb, route=route)
+                    quote_amount=1000.0, bribe=1.0, found_block=fb, route=route,
+                    profit=10.0)
 
     # Блоки сценариев разнесены на ≥100 → окна ±2 не пересекаются, токены изолированы.
     signals = pd.DataFrame([
