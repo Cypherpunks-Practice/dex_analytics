@@ -37,7 +37,8 @@ CLAUDE.md
 *.swo
 *~
 
-# --- Локальные данные ClickHouse / архивы ---
+# --- Локальные данные БД (ClickHouse, Postgres) / архивы ---
 ch_data/
 ch_user_files/
+pg_data/
 *.zip
