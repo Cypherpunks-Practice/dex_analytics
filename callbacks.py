@@ -477,8 +477,13 @@ def show_signals(state):
 
 def refresh_signals(state):
     """Перезапросить сигналы+трейды из БД (или стаба) и перерисовать таблицу."""
-    state.signals_full_data = signals_service.get_signal_matches(block_window=state.filter_block_window)[0]
-    # state.signals_full_data = signals_service.get_signal_matches()[0]
+    # Защита от пустого ввода
+    try:
+        window_val = int(state.filter_block_window)
+    except (ValueError, TypeError):
+        window_val = 0  # Значение по умолчанию, если ввели текст или пустоту
+
+    state.signals_full_data = signals_service.get_signal_matches(block_window=window_val)[0]
     _signals_view(state)
 
 
@@ -576,6 +581,21 @@ def reset_signals_filters(state):
     state.filter_time_range = config.TIME_RANGES[config.DEFAULT_TIME_RANGE]
     state.signals_current_page = 1
     _signals_view(state)
+
+
+# def reset_signals_filters(state):
+#     """Сбрасывает все фильтры и перезапрашивает БД, так как сбрасывается окно блоков."""
+#     state.filter_status = "Все"
+#     state.filter_token = ""
+#     state.filter_min_volume = ""
+#     state.filter_max_volume = ""
+#     state.filter_block_window = 0
+#     state.filter_time_range = config.TIME_RANGES[config.DEFAULT_TIME_RANGE]
+#     state.signals_current_page = 1
+    
+#     # <--- МЕНЯЕМ ЗДЕСЬ: вызываем функцию с обращением к БД, 
+#     # которая внутри себя сама вызовет _signals_view(state)
+#     refresh_signals(state)
 
 
 def export_signals_csv(state):

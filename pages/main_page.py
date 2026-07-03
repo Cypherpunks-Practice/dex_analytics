@@ -45,6 +45,7 @@ from callbacks import (
     remove_exclude_trade_shark,
     remove_include_shark,
     remove_pool,
+    refresh_signals,
     reset_signals_filters,
     show_dashboard,
     show_signals,
@@ -567,8 +568,9 @@ with tgb.Page() as page:
                         tgb.input(
                             value="{filter_block_window}",
                             label="Диап. блоков",
-                            on_change=apply_signals_filters,
-                            change_delay=300,
+                            on_action=refresh_signals,   # Срабатывает по нажатию Enter
+                            on_change=refresh_signals,   # <--- МЕНЯЕМ ЗДЕСЬ
+                            change_delay=800,            # <--- Увеличиваем задержку для запроса в БД
                             class_name="filter-input"
                         )
                         
