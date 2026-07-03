@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import pandas as pd
 from taipy.gui import notify
+import tempfile
 
 import config
 import viz
@@ -578,14 +579,28 @@ def reset_signals_filters(state):
 def on_signal_row_click(state, action=None, info=None):
     pass
 
+
+
 def export_signals_csv(state):
-    """Экспорт данных в CSV."""
-    if state.signals_full_data.empty:
-        notify(state, "warning", "Нет данных для экспорта")
+    if state.signals_display_data.empty:
+        notify(state, "warning", "No data")
         return
 
-    csv_data = state.signals_full_data.to_csv(index=False, encoding='utf-8')
-    b64 = base64.b64encode(csv_data.encode('utf-8')).decode('utf-8')
-   
-    download_url = f"data:text/csv;base64,{b64}"
-    notify(state, "success", f"Экспортировано {len(state.signals_full_data)} строк")
+    tmp = tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=".csv",
+        mode="w",
+        encoding="utf-8",
+        newline=""
+    )
+
+    state.signals_display_data.to_csv(tmp.name, index=False)
+    tmp.close()
+
+    state.csv_file = tmp.name
+
+    notify(
+        state,
+        "success",
+        f"Export of {len(state.signals_display_data)} lines"
+    )

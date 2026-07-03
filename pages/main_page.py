@@ -59,7 +59,7 @@ from callbacks import (
     change_signals_page_size,
 )
 import config
-
+csv_file = ""
 
 # ---------------------------------------------------------------------------
 # Привязываемые переменные состояния (начальные значения)
@@ -593,6 +593,7 @@ with tgb.Page() as page:
                 with tgb.layout("auto auto", class_name="filter-actions"):
                     tgb.button("Сбросить", on_action=reset_signals_filters, class_name="reset-btn")
                     tgb.button("Экспорт CSV", on_action=export_signals_csv, class_name="export-btn")
+                    tgb.file_download(content="{csv_file}",label="Download CSV")
             
             # Таблица
             with tgb.part(class_name="signals-table-section"):
