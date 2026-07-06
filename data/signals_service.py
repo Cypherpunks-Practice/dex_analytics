@@ -95,7 +95,12 @@ def _stub_hop(token_in: str, token_out: str) -> dict:
 
 
 def _stub_trade(hop: dict, block: int, usd: float, ts, rng) -> dict:
-    """Трейд в формате get_trades (колонки контракта new_queries)."""
+    """Трейд в формате get_trades (колонки контракта new_queries).
+
+    token_a=token_in, token_b=token_out + side='sell' → направление свопа
+    совпадает с хопом сигнала (in→out), поэтому ориентированный граф покрытия
+    видит цепочку в нужную сторону.
+    """
     return dict(
         block_number=block,
         token_a=hop["token_in_address"],
@@ -104,6 +109,7 @@ def _stub_trade(hop: dict, block: int, usd: float, ts, rng) -> dict:
         trader_address=f"0xshark{int(rng.integers(1, 6)):034x}",
         bribe=str(int(rng.integers(10**15, 10**18))),
         priority_fee=str(int(rng.integers(10**14, 10**16))),
+        side="sell",
         swap_timestamp=ts,
     )
 
@@ -151,5 +157,5 @@ def _stub_signals_and_trades(limit: int):
     signals_df = pd.DataFrame(signals)
     trades_df = pd.DataFrame(trades, columns=[
         "block_number", "token_a", "token_b", "usd_amount",
-        "trader_address", "bribe", "priority_fee", "swap_timestamp"])
+        "trader_address", "bribe", "priority_fee", "side", "swap_timestamp"])
     return signals_df, trades_df

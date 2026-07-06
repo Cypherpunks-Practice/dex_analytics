@@ -18,10 +18,12 @@ def get_trades(pair_blocks, use_stub: bool = False, window_size: int = 2) -> pd.
     :return: pd.DataFrame с нормализованными данными для маппинга.
     """
 
-    # Если на входе пусто, возвращаем пустой DataFrame с нужной структурой
+    # Если на входе пусто, возвращаем пустой DataFrame с нужной структурой.
+    # side — направление свопа (sell: token_a→token_b, buy: token_b→token_a);
+    # matching строит по нему ОРИЕНТИРОВАННЫЙ граф токенов при поиске покрытия.
     columns = [
         'block_number', 'token_a', 'token_b', 'usd_amount',
-        'trader_address', 'bribe', 'priority_fee', 'swap_timestamp'
+        'trader_address', 'bribe', 'priority_fee', 'side', 'swap_timestamp'
     ]
 
     if not pair_blocks:
@@ -49,6 +51,7 @@ def get_trades(pair_blocks, use_stub: bool = False, window_size: int = 2) -> pd.
             'trader_address': ['0x' + ''.join(np.random.choice(list('0123456789abcdef'), 40)) for _ in range(num_mock_trades)],
             'bribe': [str(np.random.randint(10**15, 10**18)) for _ in range(num_mock_trades)],
             'priority_fee': [str(np.random.randint(10**14, 10**16)) for _ in range(num_mock_trades)],
+            'side': list(np.random.choice(['sell', 'buy'], num_mock_trades)),
         }
 
         df = pd.DataFrame(mock_data)
@@ -80,6 +83,9 @@ def get_trades(pair_blocks, use_stub: bool = False, window_size: int = 2) -> pd.
             lower(t.trader_address) AS trader_address,
             toString(t.bribe) AS bribe,
             toString(t.priority_fee) AS priority_fee,
+            -- side — Enum8('BUY'=1,'SELL'=2); lower() не принимает Enum, поэтому
+            -- сперва toString (даёт имя 'BUY'/'SELL'), затем lower → 'buy'/'sell'.
+            lower(toString(s.side)) AS side,
             toDateTime(1775121779 + (t.block_number - 24791000) * 12.0376) AS swap_timestamp
         FROM swaps s
         JOIN transactions t ON s.transaction_hash_id = t.hash_id

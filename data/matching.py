@@ -4,6 +4,8 @@ from collections import defaultdict, deque
 
 import numpy as np
 import pandas as pd
+
+import config
 from . import queries
 
 # Порядок колонок выходных фреймов — это контракт, на него садится UI.
@@ -90,14 +92,22 @@ def _signal_endpoints(signals_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["request_id", "start", "end", "n_hops", "first_fee"])
 
 
-def _best_route(ta, tb, traders, usd, tid, i0, i1, start, end):
+def _best_route(tin, tout, traders, usd, tid, i0, i1, start, end, tol):
     """Лучший покрывающий маршрут в срезе сделок ``[i0, i1)`` или ``None``.
 
-    Сделки среза группируем по игроку и в НЕОРИЕНТИРОВАННОМ графе токенов одного
-    игрока ищем BFS путь ``start → end``. Длина 1 = прямая сделка в целевой паре
-    (любой игрок); длина ≥2 = цепочка сделок ОДНОГО игрока (как route сигнала или
-    отличная). Лучший = кратчайший по числу сделок, при равенстве — максимальный
-    суммарный объём. get_trades не отдаёт направление свопа → граф неориентированный.
+    Сделки среза группируем по игроку и в ОРИЕНТИРОВАННОМ графе токенов одного
+    игрока (ребро ``token_in → token_out`` по ``side`` свопа) ищем BFS путь
+    ``start → end``. Длина 1 = прямая сделка в целевой паре в нужную сторону
+    (любой игрок); длина ≥2 = цепочка сделок ОДНОГО игрока (как route сигнала
+    или отличная).
+
+    Сплиты одного хопа (несколько сделок игрока по одному ориентированному ребру)
+    сначала АГРЕГИРУЮТСЯ: объём хопа = сумма их usd. Цепочка засчитывается только
+    если хопы одного порядка объёма — ``max/min <= tol`` (для одиночного хопа
+    проверка не применяется). Объём покрытия = СРЕДНЕЕ по хопам (не сумма), т.к.
+    через мультихоп течёт один и тот же капитал. Лучший маршрут = кратчайший по
+    числу хопов, при равенстве — больший средний объём. Представитель = сделка с
+    максимальным usd среди всех сделок пути (включая сплиты).
     """
     by_player = defaultdict(list)
     for pos in range(i0, i1):
@@ -106,46 +116,62 @@ def _best_route(ta, tb, traders, usd, tid, i0, i1, start, end):
     best_key = None
     best_rec = None
     for player, positions in by_player.items():
-        adj = defaultdict(list)
+        # Агрегация сплитов: ориентированное ребро (in,out) → объём + позиции сделок.
+        edges = {}
         for pos in positions:
-            adj[ta[pos]].append((tb[pos], pos))
-            adj[tb[pos]].append((ta[pos], pos))
+            key = (tin[pos], tout[pos])
+            e = edges.get(key)
+            if e is None:
+                e = edges[key] = {"vol": 0.0, "pos": []}
+            e["vol"] += usd[pos]
+            e["pos"].append(pos)
+        adj = defaultdict(list)
+        for (a, b), e in edges.items():
+            adj[a].append((b, e))
         if start not in adj:
             continue
-        # BFS: token → (предыдущий token, позиция ребра-сделки).
+        # BFS: token → (предыдущий token, ребро-хоп со сплитами).
         prev = {start: (None, None)}
         q = deque([start])
         while q:
             cur = q.popleft()
             if cur == end:
                 break
-            for nb, pos in adj[cur]:
+            for nb, e in adj[cur]:
                 if nb not in prev:
-                    prev[nb] = (cur, pos)
+                    prev[nb] = (cur, e)
                     q.append(nb)
         if end not in prev:
             continue
         # Реконструкция пути от end к start.
-        path_tokens, edge_pos, node = [], [], end
+        path_tokens, path_edges, node = [], [], end
         while node is not None:
             path_tokens.append(node)
-            pnode, pos = prev[node]
-            if pos is not None:
-                edge_pos.append(pos)
+            pnode, e = prev[node]
+            if e is not None:
+                path_edges.append(e)
             node = pnode
         path_tokens.reverse()
-        edge_pos.reverse()
-        vol = float(sum(usd[p] for p in edge_pos))
-        key = (len(edge_pos), -vol)
+        path_edges.reverse()
+        hop_vols = [e["vol"] for e in path_edges]
+        # Коридор допуска: хопы должны быть одного порядка объёма (не для одиночного).
+        if len(hop_vols) >= 2:
+            lo, hi = min(hop_vols), max(hop_vols)
+            if lo <= 0 or hi / lo > tol:
+                continue
+        mean_vol = float(sum(hop_vols) / len(hop_vols))
+        all_pos = [p for e in path_edges for p in e["pos"]]
+        n_trades = len(all_pos)
+        key = (len(path_edges), -mean_vol)
         if best_key is None or key < best_key:
-            rep_pos = max(edge_pos, key=lambda p: usd[p])
+            rep_pos = max(all_pos, key=lambda p: usd[p])
             best_key = key
             best_rec = {
                 "covered": True,
                 "swap_route": " → ".join(path_tokens),
                 "swap_user_id": player,
-                "route_volume": vol,
-                "route_n_trades": len(edge_pos),
+                "route_volume": mean_vol,
+                "route_n_trades": n_trades,
                 "rep_trade_id": tid[rep_pos],
             }
     return best_rec
@@ -174,13 +200,14 @@ def _path_to_named(path_str: str, tokens_dict: dict) -> str:
 
 
 def _covering_routes(signals_df: pd.DataFrame, t: pd.DataFrame,
-                     block_window: int) -> pd.DataFrame:
+                     block_window: int, hop_volume_tol: float) -> pd.DataFrame:
     """Для каждого сигнала — покрывающий маршрут в окне ``±block_window``.
 
     Возвращает DataFrame (index=``request_id``) с колонками ``_COV_COLS`` только по
     ПОКРЫТЫМ сигналам (остальные подмешиваются как not-covered в ``build_matches``).
     Кандидаты сигнала = сделки с ``|block - found_block| <= block_window`` (быстрый
     срез окна через ``searchsorted`` по отсортированному ``block_number``).
+    ``hop_volume_tol`` — коридор допуска по объёму хопов (см. ``_best_route``).
     """
     ep = _signal_endpoints(signals_df)
     fb = signals_df.set_index("request_id")["found_block"]
@@ -190,8 +217,10 @@ def _covering_routes(signals_df: pd.DataFrame, t: pd.DataFrame,
 
     ts = t.sort_values("block_number").reset_index(drop=True)
     blocks = ts["block_number"].to_numpy()
-    ta = ts["token_a"].to_numpy()
-    tb = ts["token_b"].to_numpy()
+    # Ориентированные концы свопа (token_in→token_out по side); их подмешивает
+    # build_matches до вызова, поэтому здесь колонки уже есть.
+    tin = ts["token_in"].to_numpy()
+    tout = ts["token_out"].to_numpy()
     traders = ts["trader_address"].to_numpy()
     usd = pd.to_numeric(ts["usd_amount"], errors="coerce").fillna(0.0).to_numpy()
     tid = ts["trade_id"].to_numpy()
@@ -206,7 +235,8 @@ def _covering_routes(signals_df: pd.DataFrame, t: pd.DataFrame,
         i1 = int(np.searchsorted(blocks, b + block_window, side="right"))
         if i1 <= i0:
             continue
-        rec = _best_route(ta, tb, traders, usd, tid, i0, i1, start, end)
+        rec = _best_route(tin, tout, traders, usd, tid, i0, i1, start, end,
+                          hop_volume_tol)
         if rec is not None:
             records[rid] = rec
 
@@ -250,7 +280,8 @@ def signal_pair_blocks(signals_df: pd.DataFrame) -> list[tuple[str, str, int]]:
 
 
 def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame,
-                  block_window: int = 0):
+                  block_window: int = 0,
+                  hop_volume_tol: float = config.SIGNAL_HOP_VOLUME_TOLERANCE):
     """Сопоставить сигналы и трейды → ``(signal_summary_df, matches_df)``.
 
     ``matches_df`` — сырые сделки, совпавшие по паре хопа сигнала в окне
@@ -258,11 +289,12 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame,
     оконный фильтр); справочный слой.
 
     Покрытие (``covered`` + печатный ``swap_route``) считает ``_covering_routes``:
-    сигнал покрыт, если в окне ``±block_window`` есть путь ``start → end`` (целевая
-    пара) — прямая сделка в целевой паре ЛИБО цепочка сделок ОДНОГО игрока. Объём
-    на покрытие не влияет; ``covering_volume``/``n_trades`` описывают найденный
-    маршрут (сумма объёмов и число сделок пути), представитель ``swap_*`` — макс-
-    объёмная сделка этого маршрута.
+    сигнал покрыт, если в окне ``±block_window`` есть ОРИЕНТИРОВАННЫЙ путь
+    ``start → end`` (целевая пара) — прямая сделка в целевой паре ЛИБО цепочка
+    сделок ОДНОГО игрока с хопами одного порядка объёма (коридор ``hop_volume_tol``
+    после агрегации сплитов). ``covering_volume`` = СРЕДНИЙ объём хопов, ``n_trades``
+    — число сделок пути (со сплитами); ``swap_amount`` тоже несёт средний объём, а
+    прочие ``swap_*`` (bribe/fee/время/блок) — макс-объёмную сделку маршрута.
     """
     sig_keys = _explode_route(signals_df)    
 
@@ -286,8 +318,24 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame,
     t["token_a"] = t["token_a"].str.lower()
     t["token_b"] = t["token_b"].str.lower()
     t["trader_address"] = t["trader_address"].str.lower()
+    # block_number из ClickHouse — UInt64; numpy 2.x запрещает uint64 + (-off) в
+    # оконном развороте ниже (OverflowError). Приводим к знаковому int64 (номера
+    # блоков ~2.5e7 влезают с запасом) — это чинит и searchsorted, и swap_block.
+    if not t.empty:
+        t["block_number"] = t["block_number"].astype("int64")
     t["pair_key"] = _pair_keys(t["token_a"], t["token_b"])
     t["trade_id"] = t.index
+
+    # Направление свопа из side: sell → token_a→token_b, buy → token_b→token_a.
+    # Нет колонки (старые вызовы) → трактуем как sell (token_a→token_b). token_in/
+    # token_out нужны только для ориентированного графа покрытия; pair_key/token_a/
+    # token_b (справочный matches_df) направление не трогает.
+    if "side" not in t.columns:
+        t["side"] = "sell"
+    t["side"] = t["side"].astype(str).str.lower()
+    _sell = t["side"] == "sell"
+    t["token_in"] = t["token_a"].where(_sell, t["token_b"])
+    t["token_out"] = t["token_b"].where(_sell, t["token_a"])
 
     # Сигнал-уровневые поля подмешиваем по request_id (без merge → без коллизий имён).
     si = signals_df.set_index("request_id")
@@ -341,7 +389,7 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame,
     }, columns=_MATCHES_COLS)
 
     # --- покрытие по маршруту (start→end в окне блоков) ---
-    cov = _covering_routes(signals_df, t, block_window)
+    cov = _covering_routes(signals_df, t, block_window, hop_volume_tol)
     ep = _signal_endpoints(signals_df).set_index("request_id")
     t_by_id = t.set_index("trade_id")
 
@@ -370,12 +418,16 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame,
     summary["swap_route_str"] = summary["swap_route"].apply(
         lambda s: _path_to_named(s, tokens_dict))
     summary["swap_user_id"] = cov["swap_user_id"].reindex(summary.index)
-    summary["covering_volume"] = cov["route_volume"].reindex(summary.index).fillna(0.0)
+    # covering_volume/swap_amount = СРЕДНИЙ объём хопов маршрута (route_volume).
+    # covering_volume — с fillna(0) (внутренняя метрика), «Объём сделки» (swap_amount)
+    # оставляем NaN у непокрытых, чтобы в таблице был пробел, а не 0.
+    route_vol = cov["route_volume"].reindex(summary.index)
+    summary["covering_volume"] = route_vol.fillna(0.0)
     summary["n_trades"] = cov["route_n_trades"].reindex(summary.index).fillna(0).astype(int)
+    summary["swap_amount"] = route_vol
 
-    # Представитель swap_* — макс-объёмная сделка покрывающего маршрута (по rep_trade_id).
+    # Представитель swap_* (bribe/fee/время/блок) — макс-объёмная сделка маршрута.
     rep_id = cov["rep_trade_id"].reindex(summary.index)
-    summary["swap_amount"] = rep_id.map(t_by_id["usd_amount"])
     summary["swap_bribe"] = rep_id.map(t_by_id["bribe"])
     summary["swap_fee"] = rep_id.map(t_by_id["priority_fee"])
     summary["swap_timestamp"] = rep_id.map(t_by_id["swap_timestamp"])
@@ -447,10 +499,11 @@ if __name__ == "__main__":
                 "decimals_in": 18, "decimals_out": 18,
                 "token_in_address": a, "token_out_address": b}
 
-    def _tr(block, a, b, usd, trader):
+    def _tr(block, a, b, usd, trader, side="sell"):
+        # side='sell': token_a→token_b; 'buy': token_b→token_a (см. build_matches).
         return dict(block_number=block, token_a=a, token_b=b, usd_amount=float(usd),
                     trader_address=trader, bribe="1000000000", priority_fee="500",
-                    swap_timestamp=t0)
+                    side=side, swap_timestamp=t0)
 
     # base_token = конечный токен маршрута, quote_token = начальный (как в проде).
     def _sig(rid, fb, route):
@@ -470,6 +523,10 @@ if __name__ == "__main__":
         _sig(6, 602, [_hop(A, B), _hop(B, C)]),           # multi-hop, есть лишь одна нога → НЕ покрыт
         _sig(7, 702, [_hop(A, B), _hop(B, C)]),           # multi-hop, ноги у РАЗНЫХ игроков → НЕ покрыт
         _sig(8, 802, []),                                 # пустой route → НЕ покрыт
+        _sig(9, 902, [_hop(A, B)]),                       # сделка в ОБРАТНУЮ сторону B→A → НЕ покрыт
+        _sig(10, 1002, [_hop(A, B)]),                     # покрыт buy-сделкой (направление инвертируется)
+        _sig(11, 1102, [_hop(A, B)]),                     # single-hop, хоп из 2 сплитов
+        _sig(12, 1202, [_hop(A, B), _hop(B, C)]),         # цепочка с неравными хопами → вне коридора
     ])
 
     trades = pd.DataFrame([
@@ -484,16 +541,22 @@ if __name__ == "__main__":
         _tr(602, A, B, 999.0, "0xR"),                     # s6: только одна нога {A,B}
         _tr(702, A, B, 100.0, "0xP1"),                    # s7: {A,B} у P1
         _tr(702, B, C, 100.0, "0xP2"),                    # s7: {B,C} у P2 (другой игрок)
+        _tr(902, B, A, 500.0, "0xDir"),                   # s9: sell B→A — обратное направление
+        _tr(1002, B, A, 550.0, "0xBuy", side="buy"),      # s10: buy → in=A,out=B → покрывает A→B
+        _tr(1102, A, B, 300.0, "0xSplit"),                # s11: сплит 1/2 хопа A→B
+        _tr(1102, A, B, 400.0, "0xSplit"),                # s11: сплит 2/2 хопа A→B (агрегируются)
+        _tr(1202, A, B, 700.0, "0xTol"),                  # s12: нога {A,B} = 700
+        _tr(1202, B, C, 50.0, "0xTol"),                   # s12: нога {B,C} = 50 → ratio 14 > tol
         _tr(999, A, B, 9999.0, "0xNoise"),                # шум: блок далеко за окном
     ])
 
-    summary, matches = build_matches(signals, trades, block_window=2)
+    summary, matches = build_matches(signals, trades, block_window=2, hop_volume_tol=2.0)
     s = summary.set_index("request_id")
 
     # контракт колонок и размеры
     assert list(summary.columns) == _SUMMARY_COLS, summary.columns.tolist()
     assert list(matches.columns) == _MATCHES_COLS, matches.columns.tolist()
-    assert len(summary) == 8, len(summary)
+    assert len(summary) == 12, len(summary)
 
     # --- покрытие ---
     assert bool(s.loc[1, "covered"]) is True   # single-hop, сделка есть (uppercase → lower)
@@ -504,23 +567,33 @@ if __name__ == "__main__":
     assert bool(s.loc[6, "covered"]) is False  # только одна нога мультихопа
     assert bool(s.loc[7, "covered"]) is False  # ноги у разных игроков
     assert bool(s.loc[8, "covered"]) is False  # пустой route
+    assert bool(s.loc[9, "covered"]) is False  # сделка в обратную сторону (B→A)
+    assert bool(s.loc[10, "covered"]) is True  # buy-сделка даёт нужное направление A→B
+    assert bool(s.loc[11, "covered"]) is True  # single-hop, покрыт двумя сплитами
+    assert bool(s.loc[12, "covered"]) is False # хопы 700 и 50 — вне коридора допуска
 
     # --- печатный маршрут (фактические токены пути) ---
     assert s.loc[3, "swap_route"] == f"{A} → {C}", s.loc[3, "swap_route"]
     assert s.loc[4, "swap_route"] == f"{A} → {B} → {D}", s.loc[4, "swap_route"]
     assert s.loc[5, "swap_route"] == f"{A} → {E} → {D}", s.loc[5, "swap_route"]
     assert s.loc[6, "swap_route"] == "" and s.loc[8, "swap_route"] == ""
+    assert s.loc[10, "swap_route"] == f"{A} → {B}", s.loc[10, "swap_route"]
+    assert s.loc[11, "swap_route"] == f"{A} → {B}", s.loc[11, "swap_route"]
 
-    # --- объём/число сделок = характеристики маршрута (не покрытие) ---
+    # --- объём = СРЕДНЕЕ по хопам (не сумма); число сделок = сделки пути со сплитами ---
     assert s.loc[1, "covering_volume"] == 600.0 and int(s.loc[1, "n_trades"]) == 1
-    assert s.loc[4, "covering_volume"] == 1500.0 and int(s.loc[4, "n_trades"]) == 2
-    assert s.loc[5, "covering_volume"] == 700.0 and int(s.loc[5, "n_trades"]) == 2
+    assert s.loc[4, "covering_volume"] == 750.0 and int(s.loc[4, "n_trades"]) == 2   # mean(700,800)
+    assert s.loc[5, "covering_volume"] == 350.0 and int(s.loc[5, "n_trades"]) == 2   # mean(300,400)
+    assert s.loc[11, "covering_volume"] == 700.0 and int(s.loc[11, "n_trades"]) == 2  # 300+400 (сплиты)
     assert int(s.loc[6, "n_trades"]) == 0 and s.loc[6, "covering_volume"] == 0.0
+    assert int(s.loc[12, "n_trades"]) == 0 and s.loc[12, "covering_volume"] == 0.0
 
-    # --- представитель = макс-объёмная сделка маршрута; игрок в нижнем регистре ---
-    assert s.loc[4, "swap_amount"] == 800.0 and s.loc[4, "swap_user_id"] == "0xp"
-    assert s.loc[5, "swap_amount"] == 400.0 and s.loc[5, "swap_user_id"] == "0xq"
-    assert s.loc[1, "swap_user_id"] == "0xshark1"
+    # --- «Объём сделки» (swap_amount) = средний объём хопов; игрок цепочки в нижнем регистре ---
+    assert s.loc[4, "swap_amount"] == 750.0 and s.loc[4, "swap_user_id"] == "0xp"
+    assert s.loc[5, "swap_amount"] == 350.0 and s.loc[5, "swap_user_id"] == "0xq"
+    assert s.loc[1, "swap_amount"] == 600.0 and s.loc[1, "swap_user_id"] == "0xshark1"
+    assert s.loc[11, "swap_amount"] == 700.0 and s.loc[11, "swap_user_id"] == "0xsplit"
+    assert s.loc[10, "swap_amount"] == 550.0
     assert pd.isna(s.loc[6, "swap_amount"]) and pd.isna(s.loc[6, "swap_user_id"])
 
     # --- signal_fee = fee первого хопа; пустой route → NaN ---
@@ -539,7 +612,8 @@ if __name__ == "__main__":
     assert pd.api.types.is_datetime64_any_dtype(summary["signal_timestamp"])
 
     # --- граница окна: block_window=0 → сосед s2 (202 vs 201) уже НЕ покрыт ---
-    s0 = build_matches(signals, trades, block_window=0)[0].set_index("request_id")
+    s0 = build_matches(signals, trades, block_window=0,
+                       hop_volume_tol=2.0)[0].set_index("request_id")
     assert bool(s0.loc[1, "covered"]) is True   # точный блок 100
     assert bool(s0.loc[2, "covered"]) is False  # 202 вне ±0 от 201
     assert bool(s0.loc[4, "covered"]) is True   # цепочка в точном блоке 402
