@@ -467,10 +467,10 @@ def toggle_metric(state, id):
         _refresh_expanded_metric(state)
 
 # --- Страница «Сигналы» (данные: data/signals_service.py) --------------------
-# signals_full_data хранит ПОЛНЫЙ summary-df из БД (или стаба); фильтры,
-# статистика и пагинация считаются на клиенте в _signals_view — без повторных
-# запросов к Postgres/ClickHouse. Перезапрос из БД — только refresh_signals
-# (вызывается из on_init).
+# signals_full_data хранит ПОЛНЫЙ summary-df из БД (или стаба); фильтры и
+# статистика считаются на клиенте в _signals_view — без повторных запросов к
+# Postgres/ClickHouse. Пагинацию (число строк на странице + перемотку) делает
+# сама tgb.table. Перезапрос из БД — только refresh_signals (вызывается из on_init).
 def show_dashboard(state):
     state.current_page = "dashboard"
 
@@ -633,7 +633,11 @@ def _filtered_signals(state) -> pd.DataFrame:
 
 
 def _signals_view(state):
-    """Фильтры → статистика → пагинация → видимая страница таблицы."""
+    """Фильтры → статистика → данные таблицы.
+
+    Пагинацию (число строк на странице + перемотку) делает сама ``tgb.table``
+    по всему набору отфильтрованных строк, поэтому здесь просто отдаём полный
+    отфильтрованный df — без ручного среза страницы."""
     df = _filtered_signals(state)
     total = len(df)
     covered = int(df["covered"].sum()) if total else 0
@@ -641,38 +645,11 @@ def _signals_view(state):
     state.signals_covered = covered
     state.signals_uncovered = total - covered
     state.signals_coverage_rate = f"{covered / total * 100:.1f}%" if total else "0%"
-
-    page_size = max(int(state.signals_page_size), 1)
-    state.signals_total_pages = max((total + page_size - 1) // page_size, 1)
-    if state.signals_current_page > state.signals_total_pages:
-        state.signals_current_page = state.signals_total_pages
-    start = (state.signals_current_page - 1) * page_size
-    state.signals_display_data = df.iloc[start:start + page_size]
-
-
-def next_signals_page(state):
-    """Переход на следующую страницу."""
-    if state.signals_current_page < state.signals_total_pages:
-        state.signals_current_page += 1
-        _signals_view(state)
-
-
-def prev_signals_page(state):
-    """Переход на предыдущую страницу."""
-    if state.signals_current_page > 1:
-        state.signals_current_page -= 1
-        _signals_view(state)
-
-
-def change_signals_page_size(state, var_name=None, value=None):
-    """Селектор «Строк»: пересчитать пагинацию под новый размер страницы."""
-    state.signals_current_page = 1
-    _signals_view(state)
+    state.signals_display_data = df
 
 
 def apply_signals_filters(state, var_name=None, value=None):
     """Фильтры уже записаны в state биндингом — пересобрать вид без запроса к БД."""
-    state.signals_current_page = 1
     _signals_view(state)
 
 
@@ -682,7 +659,6 @@ def apply_signals_window(state, var_name=None, value=None):
     В отличие от остальных фильтров (клиентские, `apply_signals_filters`), окно
     влияет на само покрытие, поэтому здесь дёргаем `refresh_signals` (единственный
     путь перезапроса, читает `state.filter_block_window`)."""
-    state.signals_current_page = 1
     refresh_signals(state)
 
 
@@ -692,7 +668,6 @@ def apply_signals_time_range(state, var_name=None, value=None):
     Раньше дата фильтровалась только на клиенте поверх выборки, ограниченной
     лимитом; теперь объём выборки определяет сама дата, поэтому дёргаем
     `refresh_signals` (читает `state.filter_time_range`), а не клиентский фильтр."""
-    state.signals_current_page = 1
     refresh_signals(state)
 
 
@@ -704,7 +679,6 @@ def reset_signals_filters(state):
     state.filter_max_volume = ""
     state.filter_block_window = 0
     state.filter_time_range = config.TIME_RANGES[config.DEFAULT_TIME_RANGE]
-    state.signals_current_page = 1
     # Окно сброшено в 0 → покрытие меняется, поэтому перезапрос, а не только фильтр кэша.
     refresh_signals(state)
 

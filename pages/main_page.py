@@ -28,19 +28,16 @@ from callbacks import (
     apply_signals_filters,
     apply_signals_time_range,
     apply_signals_window,
-    change_signals_page_size,
     close_admin_dialog,
     export_signals_csv,
     login,
     logout,
-    next_signals_page,
     on_change_refresh,
     on_signal_row_click,
     open_admin_create,
     open_admin_delete,
     open_admin_role,
     open_admin_users,
-    prev_signals_page,
     rebuild_area1,
     rebuild_pie,
     remove_exclude_pool_shark,
@@ -53,13 +50,6 @@ from callbacks import (
     toggle_metric,
     toggle_sidebar,
     refresh_signals,
-    prev_signals_page,
-    next_signals_page,
-    apply_signals_filters,
-    reset_signals_filters,
-    export_signals_csv,
-    on_signal_row_click,
-    change_signals_page_size,
 )
 import config
 csv_file = ""
@@ -195,11 +185,6 @@ filter_min_volume = ""
 filter_max_volume = ""
 filter_block_window = 0
 filter_time_range = config.TIME_RANGES[config.DEFAULT_TIME_RANGE]
-
-# Пагинация
-signals_page_size = 20
-signals_current_page = 1
-signals_total_pages = 1
 
 # Статистика
 signals_total = 0
@@ -639,7 +624,7 @@ with tgb.Page() as page:
                     data="{signals_display_data}",
                     columns="{signals_columns}",
                     rebuild=True,
-                    page_size=0, 
+                    page_size=50,
                     page_size_options=[10, 50, 100, 500],
                     on_action=on_signal_row_click
                 )
