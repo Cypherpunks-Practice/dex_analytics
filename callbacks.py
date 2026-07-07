@@ -11,13 +11,16 @@
 
 from __future__ import annotations
 
+import queue as _queue
+import threading
+
 import pandas as pd
-from taipy.gui import notify
+from taipy.gui import notify, invoke_long_callback, get_state_id
 import tempfile
 
 import config
 import viz
-from data import queries, signals_service
+from data import matching, queries, signals_service
 from data.login_logic import (
     User as auth_user,
     check_password,
@@ -476,16 +479,114 @@ def show_signals(state):
     state.current_page = "signals"
 
 
-def refresh_signals(state):
-    """Перезапросить сигналы+трейды из БД (или стаба) и перерисовать таблицу.
+# Реестр отмены прогрессивной загрузки: client_id -> Event текущей загрузки.
+# Смена фильтров запускает новую загрузку и «взводит» Event прежней, чтобы её
+# фоновый поток остановился и старые батчи не примешивались к таблице.
+_signals_cancel: dict[str, threading.Event] = {}
 
-    Объём выборки задаёт «Дата» (окно timestamp в запросе к Postgres), окно
-    покрытия — «Диапазон блоков». Оба требуют перезапроса, поэтому читаются здесь.
+
+def _empty_summary() -> pd.DataFrame:
+    """Пустой summary-каркас по контракту — стартовое значение аккумулятора."""
+    return pd.DataFrame(columns=matching._SUMMARY_COLS)
+
+
+def refresh_signals(state):
+    """Запустить ПРОГРЕССИВНУЮ перезагрузку сигналов (батчами, в фоне).
+
+    Объём выборки задаёт «Дата» (окно timestamp в Postgres), окно покрытия —
+    «Диапазон блоков». Оба меняют результат → полный перезапрос. Сигналы грузятся
+    батчами: фоновый поток (`_signals_worker`) считает батч за батчем и кладёт в
+    очередь, а `_signals_status` на главном потоке дорисовывает таблицу по мере
+    готовности и двигает индикатор прогресса.
     """
     key = _TIME_KEY.get(state.filter_time_range, config.DEFAULT_TIME_RANGE)
-    state.signals_full_data = signals_service.get_signal_matches(
-        block_window=state.filter_block_window, time_range=key)[0]
-    _signals_view(state)
+    block_window = state.filter_block_window
+
+    cid = get_state_id(state)
+    prev = _signals_cancel.get(cid)
+    if prev is not None:
+        prev.set()                       # остановить прежнюю загрузку клиента
+    cancel = threading.Event()
+    _signals_cancel[cid] = cancel
+
+    load_id = int(state.signals_load_id) + 1
+    state.signals_load_id = load_id
+    state.signals_full_data = _empty_summary()
+    state.signals_loading = True
+    state.signals_progress = "0%"
+    _signals_view(state)                 # сразу очистить таблицу/статистику
+
+    q: _queue.Queue = _queue.Queue()
+    # period >= 500: Taipy вызывает статус-функцию периодически ТОЛЬКО при period>=500
+    # (меньше — лишь по завершении). Именно периодические вызовы дают прогрессивную
+    # дорисовку таблицы по мере готовности батчей.
+    invoke_long_callback(
+        state,
+        _signals_worker, [key, block_window, q, load_id, cancel],
+        _signals_status, [q, load_id],
+        period=500,
+    )
+
+
+def _signals_worker(time_range, block_window, q, load_id, cancel):
+    """Фон (без доступа к state): считает батчи и кладёт их в очередь.
+
+    Каждый элемент очереди — кортеж ``(load_id, idx, total, payload)``, где payload
+    это summary-DataFrame батча либо Exception (тогда idx=total=-1)."""
+    try:
+        for summary, idx, total in signals_service.iter_signal_matches(
+                block_window=block_window, time_range=time_range):
+            if cancel.is_set():
+                return
+            q.put((load_id, idx, total, summary))
+    except Exception as exc:             # noqa: BLE001 — донесём ошибку в UI
+        q.put((load_id, -1, -1, exc))
+
+
+def _signals_status(state, status, q, load_id):
+    """Главный поток (периодически + финал): дренирует очередь, дорисовывает таблицу.
+
+    `status` — целое (heartbeat) во время работы и True/False по завершении. Батчи
+    с чужим `load_id` (устаревшая загрузка) игнорируем. `status is True` проверяем
+    ДО трактовки как int: `isinstance(True, int)` истинно."""
+    if state.signals_load_id != load_id:
+        return                            # эту загрузку уже сменила новая
+
+    applied = False
+    last = None
+    while True:
+        try:
+            lid, idx, total, payload = q.get_nowait()
+        except _queue.Empty:
+            break
+        if lid != state.signals_load_id:
+            continue
+        if isinstance(payload, Exception):
+            state.signals_loading = False
+            state.signals_progress = "ошибка загрузки"
+            notify(state, "error", f"Ошибка загрузки сигналов: {payload}")
+            return
+        # Первый батч задаём напрямую (пустой каркас — object-колонки; concat с ним
+        # мог бы поднять dtype до object и сломать числовые/датовые сортировки).
+        if state.signals_full_data.empty:
+            state.signals_full_data = payload
+        else:
+            state.signals_full_data = pd.concat(
+                [state.signals_full_data, payload], ignore_index=True)
+        applied = True
+        last = (idx, total)
+
+    if applied:
+        _signals_view(state)
+        idx, total = last
+        state.signals_progress = f"{idx + 1}/{total}"
+
+    if status is True or status is False:
+        state.signals_loading = False
+        # По завершении гасим индикатор, но НЕ затираем сообщение об ошибке.
+        if not str(state.signals_progress).startswith("ошибка"):
+            state.signals_progress = ""
+        _signals_view(state)
 
 
 def _to_float(text):

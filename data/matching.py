@@ -344,28 +344,16 @@ def build_matches(signals_df: pd.DataFrame, trades_df: pd.DataFrame,
     s_token_a = si["base_token"].str.lower()
     s_token_b = si["quote_token"].str.lower()
 
-    #-----------
-    # Разворачиваем трейды по окну блоков до слияния, чтобы избежать декартова взрыва
-    t_win_parts = []
-    for off in range(-block_window, block_window + 1):
-        part = t.copy()
-        part["cover_block"] = part["block_number"] + off
-        t_win_parts.append(part)
-    
-    if t_win_parts:
-        t_win = pd.concat(t_win_parts, ignore_index=True)
-    else:
-        t_win = pd.DataFrame(columns=t.columns.tolist() + ["cover_block"])
-
-    # Equi-join по ключу пары и целевому блоку (без пост-фильтрации)
-    cand = sig_keys.merge(
-        t_win, 
-        left_on=["pair_key", "found_block"], 
-        right_on=["pair_key", "cover_block"], 
-        how="inner"
-    )
+    # matches_df: сделки на парах хопов сигнала в окне |block-found_block|<=w.
+    # Merge-first: сперва джойн по pair_key (оставляет ТОЛЬКО сделки на хоп-парах —
+    # малое подмножество даже при выборке всех пар), затем оконный фильтр. Так нет
+    # разворота всех трейдов в (2w+1) копий (прежний источник OOM). token_in/token_out
+    # из sig_keys не тащим — иначе коллизия имён с одноимёнными колонками t.
+    sig_sub = sig_keys[["request_id", "hop_index", "n_hops",
+                        "pair_key", "fee_rate", "found_block"]]
+    cand = sig_sub.merge(t, on="pair_key", how="inner")
+    cand = cand[(cand["block_number"] - cand["found_block"]).abs() <= block_window]
     cand = cand.drop_duplicates(["request_id", "trade_id"])
-    #------------------------------------
 
     matches = pd.DataFrame({
         "request_id": cand["request_id"].values,

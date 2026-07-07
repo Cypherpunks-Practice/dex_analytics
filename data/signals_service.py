@@ -52,30 +52,59 @@ def _query_min_timestamp(time_range: str):
     return int(anchor) - int(window.total_seconds()) * per_second
 
 
-def get_signal_matches(limit: int = config.SIGNALS_QUERY_LIMIT,
-                       block_window: int = config.SIGNAL_BLOCK_WINDOW,
-                       time_range: str = config.DEFAULT_TIME_RANGE):
-    """(summary_df, matches_df) — контракт см. в `data/matching.py`.
+def iter_signal_matches(limit: int = config.SIGNALS_QUERY_LIMIT,
+                        block_window: int = config.SIGNAL_BLOCK_WINDOW,
+                        time_range: str = config.DEFAULT_TIME_RANGE):
+    """Генератор батчей покрытия: yield-ит ``(batch_summary_df, idx, total)``.
 
-    ``block_window`` — окно покрытия ±N блоков от found_block сигнала (значение
-    приходит с фронтенда строкой; нормализуем к int, по умолчанию
-    `config.SIGNAL_BLOCK_WINDOW`).
+    Сигналы тянутся из Postgres ОДИН раз (свежие первыми — ORDER BY timestamp DESC),
+    затем трейды (все трейдеры/пары) и матчинг идут БАТЧАМИ по сигналам. Размер батча
+    в сигналах = ``SIGNALS_BATCH_BLOCKS // (2*block_window+1)`` — так набор блоков (а с
+    ним объём выборки и пик памяти) на батч ограничен независимо от ширины окна.
 
-    ``time_range`` — ключ `config.TIME_RANGES`: объём выборки определяет ВЫБРАННАЯ
-    ДАТА, а не лимит. Из даты считаем нижнюю границу `min_timestamp` и тянем все
-    сигналы окна (до `limit` самых свежих — защита от OOM на «Всё время»).
+    ``idx`` — индекс батча с 0, ``total`` — общее число батчей (для прогресса).
+    STUB отдаёт один батч. Пустая выборка сигналов → генератор ничего не yield-ит.
     """
     block_window = _as_block_window(block_window)
     if clickhouse.USE_STUB:
         signals_df, trades_df = _stub_signals_and_trades(limit)
-        return matching.build_matches(signals_df, trades_df, block_window=block_window)
+        summary, _ = matching.build_matches(signals_df, trades_df, block_window=block_window)
+        yield summary, 0, 1
+        return
+
     min_ts = _query_min_timestamp(time_range)
     ts_kwargs = {} if min_ts is None else {"min_timestamp": min_ts}
     # timestamp_increase=False → ORDER BY timestamp DESC: при упоре в limit
     # оставляем самые свежие сигналы окна.
-    return matching.fetch_and_match(
-        signals_queries.get_signals, new_queries.get_trades, limit,
-        block_window=block_window, timestamp_increase=False, **ts_kwargs)
+    signals_df = signals_queries.get_signals(
+        limit, timestamp_increase=False, **ts_kwargs)
+    n = len(signals_df)
+    if n == 0:
+        return
+
+    batch_size = max(1, config.SIGNALS_BATCH_BLOCKS // (2 * block_window + 1))
+    total = (n + batch_size - 1) // batch_size
+    for idx in range(total):
+        batch = signals_df.iloc[idx * batch_size:(idx + 1) * batch_size]
+        trades_df = new_queries.get_trades(
+            matching.signal_pair_blocks(batch), window_size=block_window)
+        summary, _ = matching.build_matches(batch, trades_df, block_window=block_window)
+        yield summary, idx, total
+
+
+def get_signal_matches(limit: int = config.SIGNALS_QUERY_LIMIT,
+                       block_window: int = config.SIGNAL_BLOCK_WINDOW,
+                       time_range: str = config.DEFAULT_TIME_RANGE):
+    """(summary_df, matches_df) — не-прогрессивный путь (стаб/тесты/совместимость).
+
+    Склеивает все батчи `iter_signal_matches` в один summary. `matches_df` на этом
+    пути не нужен (UI берёт только summary) — возвращаем пустой каркас по контракту.
+    """
+    parts = [batch for batch, _, _ in
+             iter_signal_matches(limit, block_window, time_range)]
+    summary = (pd.concat(parts, ignore_index=True) if parts
+               else pd.DataFrame(columns=matching._SUMMARY_COLS))
+    return summary, pd.DataFrame(columns=matching._MATCHES_COLS)
 
 
 # --------------------------------------------------------------------------- #

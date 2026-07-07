@@ -8,13 +8,17 @@ from data import clickhouse
 
 def get_trades(pair_blocks, use_stub: bool = False, window_size: int = 2) -> pd.DataFrame:
     """
-    Извлекает сделки акул/китов из ClickHouse (БД eywa) в окне вокруг переданных блоков.
+    Извлекает сделки ВСЕХ трейдеров и ВСЕХ пар из ClickHouse (БД eywa) в нужных блоках.
+
+    Фильтров по traders/парам НЕТ — чтобы матчинг мог находить произвольные
+    альтернативные маршруты через любые токены. Память держит батчинг сверху
+    (см. signals_service.iter_signal_matches): набор блоков ограничен размером батча.
 
     :param pair_blocks: Набор кортежей (token_lo, token_hi, block_number) —
-        выход matching.signal_pair_blocks: адреса пары в нижнем регистре,
-        канонический порядок lo <= hi.
+        выход matching.signal_pair_blocks; здесь используются только блоки (пары
+        больше не фильтруются, но интерфейс сохранён).
     :param use_stub: Флаг использования заглушки (генерация фейковых данных).
-    :param window_size: Окно блоков (+- от искомого) для расширения диапазона поиска.
+    :param window_size: Окно блоков (± от искомого) для набора нужных блоков.
     :return: pd.DataFrame с нормализованными данными для маппинга.
     """
 
@@ -29,12 +33,16 @@ def get_trades(pair_blocks, use_stub: bool = False, window_size: int = 2) -> pd.
     if not pair_blocks:
         return pd.DataFrame(columns=columns)
 
-    # Диапазон блоков для bulk-запроса (расширен на window_size) + канонические
-    # ключи пар "lo|hi" для пушдауна фильтра пар на сторону БД.
+    # Точный набор нужных блоков: для каждого блока сигнала разворачиваем окно
+    # [block-window, block+window]. Именно этот НАБОР (а не сплошной диапазон
+    # min..max в сотни тысяч блоков) уходит в БД — прунится по PK transactions,
+    # так выборка ограничена реально нужными блоками (защита от OOM без trader-фильтра).
     blocks = [block for *_, block in pair_blocks]
-    min_block = max(min(blocks) - window_size, 0)
-    max_block = max(blocks) + window_size
-    pair_keys = sorted({f"{lo}|{hi}" for lo, hi, _ in pair_blocks})
+    block_set = sorted({b for base in blocks
+                        for b in range(max(base - window_size, 0), base + window_size + 1)})
+    # min/max — только для генерации фейков в stub-ветке ниже.
+    min_block = block_set[0]
+    max_block = block_set[-1]
 
     if use_stub:
         # --- ЗАГЛУШКА (MOCK DATA) ---
@@ -65,15 +73,14 @@ def get_trades(pair_blocks, use_stub: bool = False, window_size: int = 2) -> pd.
         return df
 
     # --- БОЕВОЙ ЗАПРОС К CLICKHOUSE ---
-    # SQL запрос составлен с учетом требований:
-    # 1. Тянем из сырых swaps JOIN transactions (НЕ mv)
-    # 2. Фильтр по traders (label IN 'shark', 'whale') через подзапрос для скорости
-    # 3. Приведение адресов к нижнему регистру (lower)
-    # 4. Каст bribe и priority_fee в String (toString) для защиты от переполнения
-    # 5. Вычисление swap_timestamp прямо на стороне БД
-    # 6. Диапазон блоков и пары — серверными параметрами (никаких f-строк);
-    #    пара свопа канонизируется как least|greatest и сверяется с pair_keys,
-    #    чтобы не тянуть чужие пары из того же диапазона блоков.
+    # Тянем сделки ВСЕХ трейдеров и ВСЕХ пар в нужных блоках (без фильтров по
+    # traders/парам) — чтобы матчинг мог находить произвольные альтернативные
+    # маршруты через любые токены. Память держит батчинг сверху (см. signals_service):
+    # набор блоков ограничен, поэтому и выборка ограничена.
+    #  - block_number IN {blocks} — точечный набор, прунится по PK transactions;
+    #  - адреса → lower; bribe/priority_fee → toString (защита от переполнения);
+    #  - side: Enum8('BUY'=1,'SELL'=2) → toString → lower ('buy'/'sell');
+    #  - swap_timestamp считается на стороне БД по номеру блока.
     query = """
         SELECT
             t.block_number AS block_number,
@@ -83,29 +90,18 @@ def get_trades(pair_blocks, use_stub: bool = False, window_size: int = 2) -> pd.
             lower(t.trader_address) AS trader_address,
             toString(t.bribe) AS bribe,
             toString(t.priority_fee) AS priority_fee,
-            -- side — Enum8('BUY'=1,'SELL'=2); lower() не принимает Enum, поэтому
-            -- сперва toString (даёт имя 'BUY'/'SELL'), затем lower → 'buy'/'sell'.
             lower(toString(s.side)) AS side,
             toDateTime(1775121779 + (t.block_number - 24791000) * 12.0376) AS swap_timestamp
         FROM swaps s
         JOIN transactions t ON s.transaction_hash_id = t.hash_id
-        WHERE t.block_number >= {minb:UInt64} AND t.block_number <= {maxb:UInt64}
+        WHERE t.block_number IN {blocks:Array(UInt64)}
           AND s.token_a_address IS NOT NULL
           AND s.token_b_address IS NOT NULL
-          AND has({pairs:Array(String)},
-                  concat(least(lower(s.token_a_address), lower(s.token_b_address)), '|',
-                         greatest(lower(s.token_a_address), lower(s.token_b_address))))
-          AND lower(t.trader_address) IN (
-              SELECT lower(contract_address) FROM traders
-              WHERE label IN ('shark', 'whale')
-          )
     """
 
     # clickhouse-connect на пустом результате отдаёт DataFrame без единой
     # колонки (shape (0, 0)) — приводим к контракту (те же именованные columns,
     # что и в guard-ветке "пустой pair_blocks" выше), иначе matching.build_matches
     # падает на t["token_a"] с KeyError.
-    result = clickhouse.execute(
-        query, {"minb": min_block, "maxb": max_block, "pairs": pair_keys})
-    print(result.head())
+    result = clickhouse.execute(query, {"blocks": block_set})
     return result if not result.empty else pd.DataFrame(columns=columns)

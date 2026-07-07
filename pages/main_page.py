@@ -207,6 +207,11 @@ signals_covered = 0
 signals_uncovered = 0
 signals_coverage_rate = "0%"
 
+# Прогрессивная загрузка (см. callbacks.refresh_signals / _signals_status)
+signals_loading = False      # идёт фоновая догрузка батчей
+signals_progress = ""        # индикатор прогресса, напр. "3/10"
+signals_load_id = 0          # монотонный токен загрузки (защита от гонок)
+
 # ---- Колонки для таблицы сигналов ----
 signals_columns = {
     "signal_timestamp": {"index": 0, "title": "Время сигнала", "format": "yyyy-MM-dd HH:mm:ss"},
@@ -546,7 +551,11 @@ with tgb.Page() as page:
                 with tgb.part(class_name="stat-card"):
                     tgb.text("### Процент покрытия", mode="md")
                     tgb.text("{signals_coverage_rate}", class_name="stat-number")
-            
+
+            # Индикатор прогрессивной загрузки (виден, пока идут батчи)
+            with tgb.part(class_name="signals-loading", render="{signals_loading}"):
+                tgb.text("⏳ Загрузка сделок батчами… {signals_progress}", mode="md")
+
             # Фильтры
             with tgb.part(class_name="signals-filters"):
                 tgb.text("## Фильтры", mode="md")

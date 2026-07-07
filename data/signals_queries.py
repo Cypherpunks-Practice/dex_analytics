@@ -12,11 +12,16 @@ found_block, route, profit].
 
 import json
 import os
+import threading
 
 import pandas as pd
 import psycopg2
 
 _pg_connection = None
+# Единственное соединение psycopg2 не потокобезопасно для параллельных курсоров.
+# Прогрессивная загрузка идёт в фоновом потоке и при смене фильтров может на миг
+# наложиться на прежнюю — сериализуем доступ к соединению этим локом.
+_pg_lock = threading.Lock()
 
 
 def _get_connection():
@@ -47,8 +52,6 @@ def get_signals_df(limit=50, min_timestamp=0, max_timestamp=0xffffffffffffffff,
                    timestamp_increase=None, tokens_a_list=None, tokens_b_list=None,
                    min_amount=0, max_amount=0xffffffffffffffff, amount_increase=None,
                    min_profit=0, max_profit=0xffffffffffffffff, profit_increase=None):
-    cursor = _get_connection().cursor()
-
     orderby = "ORDER BY"
     if timestamp_increase == True:
         orderby += " timestamp asc"
@@ -77,19 +80,21 @@ def get_signals_df(limit=50, min_timestamp=0, max_timestamp=0xffffffffffffffff,
         params.extend(tokens_b_list)
     params.append(limit)
 
-    cursor.execute(f'''SELECT swaps_request.id, swaps_request.timestamp, base_token,
-                    quote_token, quote_amount, bribe, found_block, route, potential_profit
-                    FROM arbitrages JOIN swaps_request ON arbitrages.id=swaps_request.arbitrage_id
-                    JOIN swaps_request_dex ON swaps_request_dex.id = swaps_request.id
-                    WHERE type = 'DECENTRALIZED' AND
-                    swaps_request.timestamp > %s AND swaps_request.timestamp < %s AND
-                    quote_amount > %s AND quote_amount < %s AND
-                    potential_profit > %s AND potential_profit < %s
-                    {tokens_a}{tokens_b}
-                    {orderby}
-                    LIMIT %s;''', params)
-    result = cursor.fetchall()
-    cursor.close()
+    with _pg_lock:
+        cursor = _get_connection().cursor()
+        cursor.execute(f'''SELECT swaps_request.id, swaps_request.timestamp, base_token,
+                        quote_token, quote_amount, bribe, found_block, route, potential_profit
+                        FROM arbitrages JOIN swaps_request ON arbitrages.id=swaps_request.arbitrage_id
+                        JOIN swaps_request_dex ON swaps_request_dex.id = swaps_request.id
+                        WHERE type = 'DECENTRALIZED' AND
+                        swaps_request.timestamp > %s AND swaps_request.timestamp < %s AND
+                        quote_amount > %s AND quote_amount < %s AND
+                        potential_profit > %s AND potential_profit < %s
+                        {tokens_a}{tokens_b}
+                        {orderby}
+                        LIMIT %s;''', params)
+        result = cursor.fetchall()
+        cursor.close()
     return result
 
 
@@ -101,13 +106,14 @@ def get_max_timestamp():
     считался только по тем же строкам (type='DECENTRALIZED'), от которых потом
     отсчитывается окно в `signals_service`.
     """
-    cursor = _get_connection().cursor()
-    cursor.execute('''SELECT max(swaps_request.timestamp)
-                    FROM arbitrages JOIN swaps_request ON arbitrages.id=swaps_request.arbitrage_id
-                    JOIN swaps_request_dex ON swaps_request_dex.id = swaps_request.id
-                    WHERE type = 'DECENTRALIZED';''')
-    row = cursor.fetchone()
-    cursor.close()
+    with _pg_lock:
+        cursor = _get_connection().cursor()
+        cursor.execute('''SELECT max(swaps_request.timestamp)
+                        FROM arbitrages JOIN swaps_request ON arbitrages.id=swaps_request.arbitrage_id
+                        JOIN swaps_request_dex ON swaps_request_dex.id = swaps_request.id
+                        WHERE type = 'DECENTRALIZED';''')
+        row = cursor.fetchone()
+        cursor.close()
     return row[0] if row and row[0] is not None else None
 
 
