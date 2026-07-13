@@ -59,3 +59,5 @@ desktop.ini
 *.zip
 ch_data/
 ch_user_files/
+*.pdf
+*.tex

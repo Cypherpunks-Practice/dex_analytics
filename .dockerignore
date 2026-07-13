@@ -42,3 +42,5 @@ ch_data/
 ch_user_files/
 pg_data/
 *.zip
+*.pdf
+*.tex
