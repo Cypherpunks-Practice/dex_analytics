@@ -42,6 +42,12 @@ def _get_connection():
                 user=os.getenv("PG_USER", "postgres"),
                 password=os.getenv("PG_PASSWORD", "121205"),
             )
+            # Читаем только SELECT-ами, транзакции не нужны. Без autocommit первый
+            # же упавший запрос оставляет соединение в INFAILEDTRANSACTION (при этом
+            # closed == 0, т.е. реконнекта не будет), и ВСЕ следующие запросы отвечают
+            # «current transaction is aborted», маскируя исходную ошибку. Заодно
+            # соединение не висит в «idle in transaction».
+            _pg_connection.autocommit = True
         except UnicodeDecodeError as exc:
             msg = exc.object.decode("cp1251", errors="replace")
             raise psycopg2.OperationalError(msg) from exc

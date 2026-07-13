@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 
 import config
 
@@ -246,9 +247,8 @@ def _ensure_dim_pool_pair(c) -> None:
 
     Идемпотентно: если MV уже есть — не пересоздаём (CREATE ... IF NOT EXISTS).
     Если от прошлых версий остался объект другого типа (обычная VIEW или
-    MergeTree-таблица) — снимаем его и создаём заново. После первого создания
-    ждём окончания первичного refresh (SYSTEM WAIT VIEW), чтобы запросы сразу
-    видели подписи пар, а не пустой словарь.
+    MergeTree-таблица) — снимаем его и создаём заново. Затем ждём, пока refresh
+    наполнит словарь, чтобы запросы сразу видели подписи пар (см. _wait_dim_pool_pair).
     """
     rows = c.query(
         "SELECT engine FROM system.tables "
@@ -258,9 +258,45 @@ def _ensure_dim_pool_pair(c) -> None:
     if rows and not exists_as_mv:
         c.command("DROP TABLE IF EXISTS dim_pool_pair")
     c.command(_DIM_POOL_PAIR_DDL)
-    if not exists_as_mv:
-        # Дождаться первичного наполнения (запускается при создании без EMPTY).
-        c.command("SYSTEM WAIT VIEW dim_pool_pair")
+    _wait_dim_pool_pair(c)
+
+
+def _wait_dim_pool_pair(c) -> None:
+    """Дождаться первичного наполнения dim_pool_pair (refresh идёт на сервере).
+
+    Ждём ПО ФАКТУ наполненности, а не по факту «MV только что создали»: вьюха
+    может существовать с прошлого запуска и быть пустой (первичный refresh упал
+    или был прерван) — тогда дашборд молча подписал бы все пулы как «unknown».
+    Признак готовности — непустая таблица: refresh у refreshable MV атомарен
+    (таблица заменяется целиком), полузаполненного состояния не бывает.
+
+    Опрашиваем таблицу, а не `SYSTEM WAIT VIEW`: этой команды нет в ClickHouse
+    24.8 (на котором крутится eywa) — там она даёт SYNTAX_ERROR.
+
+    По таймауту НЕ падаем: дашборд поднимется без словаря (пулы — «unknown»,
+    метрики «по парам» пустые), а следующий refresh наполнит его сам.
+    """
+    if not c.query("SELECT count() FROM swaps").result_rows[0][0]:
+        return                    # источник пуст — наполнять словарь нечем
+
+    deadline = time.monotonic() + config.CH_DIM_WAIT_TIMEOUT
+    while time.monotonic() < deadline:
+        if c.query("SELECT count() FROM dim_pool_pair").result_rows[0][0]:
+            return
+        time.sleep(1)
+
+    print(f"[ClickHouse] dim_pool_pair: пуста спустя {config.CH_DIM_WAIT_TIMEOUT} c "
+          f"— подписи пар будут 'unknown' до следующего refresh")
+    try:
+        refresh = c.query(
+            "SELECT * FROM system.view_refreshes "
+            "WHERE database = currentDatabase() AND view = 'dim_pool_pair'"
+        )
+        for row in refresh.result_rows:
+            print(f"[ClickHouse] system.view_refreshes: "
+                  f"{dict(zip(refresh.column_names, row))}")
+    except Exception as exc:      # noqa: BLE001 — диагностика не должна ронять старт
+        print(f"[ClickHouse] system.view_refreshes недоступна: {exc}")
 
 
 def _new_client(send_receive_timeout: int | None = None):

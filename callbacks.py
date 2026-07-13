@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import queue as _queue
 import threading
+import traceback
 
 import pandas as pd
 from taipy.gui import notify, invoke_long_callback, get_state_id
@@ -540,6 +541,9 @@ def _signals_worker(time_range, block_window, q, load_id, cancel):
                 return
             q.put((load_id, idx, total, summary))
     except Exception as exc:             # noqa: BLE001 — донесём ошибку в UI
+        # В тост уедет только str(exc), а при смене фильтра (устаревший load_id)
+        # его вообще не покажут — поэтому полный стек пишем в stdout контейнера.
+        traceback.print_exc()
         q.put((load_id, -1, -1, exc))
 
 
@@ -564,7 +568,8 @@ def _signals_status(state, status, q, load_id):
         if isinstance(payload, Exception):
             state.signals_loading = False
             state.signals_progress = "ошибка загрузки"
-            notify(state, "error", f"Ошибка загрузки сигналов: {payload}")
+            notify(state, "error", "Ошибка загрузки сигналов: "
+                                   f"{type(payload).__name__}: {payload}")
             return
         # Первый батч задаём напрямую (пустой каркас — object-колонки; concat с ним
         # мог бы поднять dtype до object и сломать числовые/датовые сортировки).
