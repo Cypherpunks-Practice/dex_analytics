@@ -397,10 +397,33 @@ def _ensure_dim_pool_meta(c) -> None:
 
 
 def _ensure_signals_legs(c) -> None:
-    """Материализация сигналов из Postgres (см. _SIGNALS_LEGS_DDL)."""
-    _ensure_refreshable_mv(
-        c, "signals_legs", _SIGNALS_LEGS_DDL,
-        "Страница «Сигналы» будет пуста до следующего refresh.")
+    """Материализация сигналов из Postgres (см. _SIGNALS_LEGS_DDL).
+
+    Единственный объект схемы с ВНЕШНИМ источником, поэтому единственный, чей
+    CREATE может упасть не по нашей вине: ClickHouse 24.8 проверяет соединение с
+    Postgres прямо на DDL. А torch раз в 4 часа дропается и заливается заново
+    репликацией — попасть рестартом в это окно нормально и не должно ронять
+    дашборд целиком.
+
+    Поэтому недоступность Postgres здесь НЕ фатальна: печатаем причину и живём
+    дальше. Если вьюха уже была создана раньше — она остаётся с прежними данными
+    (refresh атомарен), и страница «Сигналы» продолжает работать на них; если её
+    ещё нет — страница будет пуста, а остальной дашборд не пострадает.
+    """
+    try:
+        _ensure_refreshable_mv(
+            c, "signals_legs", _SIGNALS_LEGS_DDL,
+            "Страница «Сигналы» будет пуста до следующего refresh.")
+    except Exception as exc:      # noqa: BLE001 — сигналы не должны ронять дашборд
+        exists = bool(c.query(
+            "SELECT 1 FROM system.tables "
+            "WHERE database = currentDatabase() AND name = 'signals_legs'"
+        ).result_rows)
+        state = ("работает на данных прошлого refresh" if exists
+                 else "страница «Сигналы» будет пуста")
+        print(f"[ClickHouse] signals_legs: не удалось создать/обновить — {exc}\n"
+              f"[ClickHouse] Проверьте CH_PG_* (адрес виден с точки зрения "
+              f"КОНТЕЙНЕРА CLICKHOUSE, не дашборда). Дашборд {state}.")
 
 
 _client = None

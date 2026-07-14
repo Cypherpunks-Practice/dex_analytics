@@ -278,8 +278,23 @@ ORDER BY signal_timestamp DESC
 """
 
 
+def _signals_ready() -> bool:
+    """Есть ли материализация сигналов.
+
+    Её могло не быть: CREATE вьюхи падает, если Postgres недоступен (окно
+    репликации torch либо неверные CH_PG_*, см. clickhouse._ensure_signals_legs).
+    Тогда страница должна остаться ПУСТОЙ, а не сыпать «Unknown table» в тост.
+    """
+    df = clickhouse.execute(
+        "SELECT count() AS n FROM system.tables "
+        "WHERE database = currentDatabase() AND name = 'signals_legs'")
+    return not df.empty and int(df["n"].iloc[0]) > 0
+
+
 def get_max_timestamp() -> datetime | None:
     """Максимальная метка времени материализованных сигналов (анкер окна «Дата»)."""
+    if not _signals_ready():
+        return None
     rows = clickhouse.execute("SELECT max(ts) AS ts FROM signals_legs")
     if rows.empty or pd.isna(rows["ts"].iloc[0]):
         return None
@@ -295,6 +310,8 @@ _EPOCH = datetime(2000, 1, 1)
 
 def get_signal_count(min_ts: datetime | None = None) -> int:
     """Сколько сигналов попадает в окно «Дата» (нужно для числа батчей)."""
+    if not _signals_ready():
+        return 0
     df = clickhouse.execute(
         "SELECT uniqExact(request_id) AS n FROM signals_legs "
         "WHERE ts >= {min_ts:DateTime64(3)}",
