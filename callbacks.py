@@ -21,7 +21,7 @@ import tempfile
 
 import config
 import viz
-from data import matching, queries, signals_service
+from data import queries, signals_service
 from data.login_logic import (
     User as auth_user,
     check_password,
@@ -488,7 +488,7 @@ _signals_cancel: dict[str, threading.Event] = {}
 
 def _empty_summary() -> pd.DataFrame:
     """Пустой summary-каркас по контракту — стартовое значение аккумулятора."""
-    return pd.DataFrame(columns=matching._SUMMARY_COLS)
+    return pd.DataFrame(columns=signals_service.SUMMARY_COLS)
 
 
 def refresh_signals(state):
@@ -668,7 +668,7 @@ def apply_signals_window(state, var_name=None, value=None):
 
 
 def apply_signals_time_range(state, var_name=None, value=None):
-    """«Дата» задаёт окно timestamp в запросе к Postgres → нужен ПЕРЕЗАПРОС.
+    """«Дата» задаёт окно времени в запросе сигналов → нужен ПЕРЕЗАПРОС.
 
     Раньше дата фильтровалась только на клиенте поверх выборки, ограниченной
     лимитом; теперь объём выборки определяет сама дата, поэтому дёргаем

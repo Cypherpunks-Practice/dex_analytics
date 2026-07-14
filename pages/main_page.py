@@ -198,23 +198,33 @@ signals_progress = ""        # индикатор прогресса, напр. 
 signals_load_id = 0          # монотонный токен загрузки (защита от гонок)
 
 # ---- Колонки для таблицы сигналов ----
+# База/Котировка — это niche сигнала (ETH/USD, XAU/USD): СИМВОЛЫ, а не адреса.
+# Bribe везде в ETH (в БД — wei), поэтому формат с шестью знаками.
 signals_columns = {
     "signal_timestamp": {"index": 0, "title": "Время сигнала", "format": "yyyy-MM-dd HH:mm:ss"},
     "found_block": {"index": 1, "title": "Блок сигнала"},
-    "token_a": {"index": 2, "title": "Токен A"},
-    "token_b": {"index": 3, "title": "Токен B"},
+    "token_a": {"index": 2, "title": "База"},
+    "token_b": {"index": 3, "title": "Котировка"},
     "signal_amount": {"index": 4, "title": "Объём сигнала"},
     "profit": {"index": 5, "title": "Профит"},
     "route": {"index": 6, "title": "Путь"},
-    "signal_bribe": {"index": 7, "title": "Bribe сигнала"},
+    "signal_bribe": {"index": 7, "title": "Bribe сигнала (ETH)", "format": "%.6f"},
     "signal_fee": {"index": 8, "title": "Fee сигнала"},
-    "swap_timestamp": {"index": 9, "title": "Время сделки", "format": "yyyy-MM-dd HH:mm:ss"},
-    "swap_block": {"index": 10, "title": "Блок сделки"},
-    "swap_route_str": {"index": 11, "title": "Путь сделки"},
-    "swap_amount": {"index": 12, "title": "Объём сделки"},
-    "swap_user_id": {"index": 13, "title": "ID пользователя"},
-    "swap_bribe": {"index": 14, "title": "Bribe сделки"},
-    "swap_fee": {"index": 15, "title": "Fee сделки"},
+    # Тип покрытия: atomic — одна транзакция конкурента задела ≥2 ноги сигнала
+    # (сильная улика); volume — одноногий сигнал, совпал только объём (слабее).
+    "coverage_kind": {"index": 9, "title": "Тип покрытия"},
+    "covered_legs": {"index": 10, "title": "Покрыто ног"},
+    "n_hops": {"index": 11, "title": "Всего ног"},
+    "swap_timestamp": {"index": 12, "title": "Время сделки", "format": "yyyy-MM-dd HH:mm:ss"},
+    "swap_block": {"index": 13, "title": "Блок сделки"},
+    "swap_route_str": {"index": 14, "title": "Задетые ноги"},
+    "swap_amount": {"index": 15, "title": "Объём сделки"},
+    "swap_user_id": {"index": 16, "title": "ID пользователя"},
+    # Брайб сильнейшего конкурента в окне и наш перевес над ним: положительный
+    # bribe_edge значит, что мы предлагали больше — то есть выиграли бы блок.
+    "competitor_bribe": {"index": 17, "title": "Bribe конкурента (ETH)", "format": "%.6f"},
+    "bribe_edge": {"index": 18, "title": "Перевес (ETH)", "format": "%.6f"},
+    "swap_fee": {"index": 19, "title": "Fee сделки (ETH)", "format": "%.6f"},
 }
 # ---------------------------------------------------------------------------
 # Хелперы для выражений шаблона

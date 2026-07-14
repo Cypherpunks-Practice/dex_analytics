@@ -803,15 +803,3 @@ def get_area_by_shark(filters: dict, metric: str, limit: int = config.AREA_SHARK
         ORDER BY time
     """
     return _pivot_wide(clickhouse.execute(sql, params), "time")
-
-
-def get_tokens_dict() -> dict:
-    # Офлайн-режим: без БД возвращаем пустой словарь — _route_to_str в matching.py
-    # тогда печатает укороченные адреса вместо символов (см. контракт USE_STUB).
-    if clickhouse.USE_STUB:
-        return {}
-    sql = """
-        SELECT contract_address, label FROM tokens
-    """
-    df = clickhouse.execute(sql)
-    return dict(zip(df["contract_address"].str.lower(), df["label"]))

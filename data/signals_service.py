@@ -1,14 +1,17 @@
 """Единая точка данных для страницы «Сигналы».
 
-UI (callbacks.refresh_signals) вызывает только `get_signal_matches()`; внутри —
-гибрид двух БД: сигналы из Postgres (`data/signals_queries.py`), сделки акул и
-китов из ClickHouse eywa (`data/new_queries.py`), сопоставление —
-`data/matching.py` (build_matches).
+UI (callbacks.refresh_signals) вызывает только `iter_signal_matches()`. Внутри —
+ClickHouse: он материализует сигналы из Postgres (`signals_legs`), сам сшивает их
+со сделками и отдаёт ПО СТРОКЕ НА СИГНАЛ (см. `data/signals_queries.py`).
+
+Батчи. Раньше они резались по БЛОКАМ и защищали pandas от OOM: матчинг тянул в
+память все свопы окна. Теперь сшивка идёт в БД, и батч режется по СИГНАЛАМ —
+он ограничивает пик памяти ClickHouse на джойне (база живая и растёт) и заодно
+даёт прогрессивную дорисовку таблицы.
 
 `USE_STUB = True` (общий флаг из `data/clickhouse.py`) переключает на офлайн-
-заглушку: детерминированные фейковые сигналы и СВЯЗНЫЕ с ними трейды (часть
-сигналов покрыта сплитами/мультихопом, есть шум в чужих блоках) прогоняются
-через реальный `build_matches` — пайплайн работает end-to-end без обеих БД.
+заглушку: детерминированный summary без обеих БД — так страницу можно смотреть
+и править без доступа к ClickHouse.
 """
 
 from __future__ import annotations
@@ -17,7 +20,10 @@ import numpy as np
 import pandas as pd
 
 import config
-from data import clickhouse, matching, new_queries, signals_queries
+from data import clickhouse, signals_queries
+
+# Контракт колонок summary живёт рядом с запросом, который его порождает.
+SUMMARY_COLS = signals_queries.SUMMARY_COLS
 
 
 def _as_block_window(value) -> int:
@@ -33,14 +39,12 @@ def _as_block_window(value) -> int:
 
 
 def _query_min_timestamp(time_range: str):
-    """Нижняя граница `timestamp` для запроса сигналов по выбранной дате.
+    """Нижняя граница времени для выборки сигналов по выбранной дате.
 
     Ширину окна берём из `config.SIGNALS_TIME_WINDOWS` и откладываем от анкера —
-    максимальной метки времени в таблице сигналов (анкер «по данным», т.к. дамп
-    статичен и метки лежат в прошлом; ср. `config.TIME_ANCHOR`). Единицу БД
-    (секунды/миллисекунды) определяем по величине анкера — как в
-    `signals_queries.get_signals`. `"all"` / неизвестный ключ → None (без нижней
-    границы, тянем всё).
+    максимальной метки времени материализованных сигналов (анкер «по данным»,
+    ср. `config.TIME_ANCHOR`). `"all"` / неизвестный ключ → None (без нижней
+    границы: тянем всё, что есть в пределах SIGNALS_RETENTION_DAYS).
     """
     window = config.SIGNALS_TIME_WINDOWS.get(time_range)
     if window is None:
@@ -48,8 +52,7 @@ def _query_min_timestamp(time_range: str):
     anchor = signals_queries.get_max_timestamp()
     if anchor is None:
         return None
-    per_second = 1000 if float(anchor) > 1e12 else 1
-    return int(anchor) - int(window.total_seconds()) * per_second
+    return anchor - window
 
 
 def iter_signal_matches(limit: int = config.SIGNALS_QUERY_LIMIT,
@@ -57,134 +60,114 @@ def iter_signal_matches(limit: int = config.SIGNALS_QUERY_LIMIT,
                         time_range: str = config.DEFAULT_TIME_RANGE):
     """Генератор батчей покрытия: yield-ит ``(batch_summary_df, idx, total)``.
 
-    Сигналы тянутся из Postgres ОДИН раз (свежие первыми — ORDER BY timestamp DESC),
-    затем трейды (все трейдеры/пары) и матчинг идут БАТЧАМИ по сигналам. Размер батча
-    в сигналах = ``SIGNALS_BATCH_BLOCKS // (2*block_window+1)`` — так набор блоков (а с
-    ним объём выборки и пик памяти) на батч ограничен независимо от ширины окна.
+    Сигналы окна «Дата» режутся на батчи по `config.SIGNALS_BATCH_SIZE`; каждый
+    батч — отдельный запрос к ClickHouse (сортировка «свежие первыми», поэтому при
+    упоре в `limit` останутся самые свежие). Сам срез выбирает БД: гнать в неё
+    список из тысяч id нельзя — он не помещается в HTTP-параметр.
 
     ``idx`` — индекс батча с 0, ``total`` — общее число батчей (для прогресса).
-    STUB отдаёт один батч. Пустая выборка сигналов → генератор ничего не yield-ит.
+    STUB отдаёт один батч. Пустая выборка → генератор ничего не yield-ит.
     """
     block_window = _as_block_window(block_window)
     if clickhouse.USE_STUB:
-        signals_df, trades_df = _stub_signals_and_trades(limit)
-        summary, _ = matching.build_matches(signals_df, trades_df, block_window=block_window)
-        yield summary, 0, 1
+        yield _stub_summary(limit, block_window), 0, 1
         return
 
     min_ts = _query_min_timestamp(time_range)
-    ts_kwargs = {} if min_ts is None else {"min_timestamp": min_ts}
-    # timestamp_increase=False → ORDER BY timestamp DESC: при упоре в limit
-    # оставляем самые свежие сигналы окна.
-    signals_df = signals_queries.get_signals(
-        limit, timestamp_increase=False, **ts_kwargs)
-    n = len(signals_df)
-    if n == 0:
+    n = min(signals_queries.get_signal_count(min_ts), int(limit))
+    if n <= 0:
         return
 
-    batch_size = max(1, config.SIGNALS_BATCH_BLOCKS // (2 * block_window + 1))
-    total = (n + batch_size - 1) // batch_size
+    size = max(1, int(config.SIGNALS_BATCH_SIZE))
+    total = (n + size - 1) // size
     for idx in range(total):
-        batch = signals_df.iloc[idx * batch_size:(idx + 1) * batch_size]
-        trades_df = new_queries.get_trades(
-            matching.signal_pair_blocks(batch), window_size=block_window)
-        summary, _ = matching.build_matches(batch, trades_df, block_window=block_window)
-        yield summary, idx, total
+        offset = idx * size
+        yield (signals_queries.get_signal_summary(
+                   offset, min(size, n - offset), block_window, min_ts),
+               idx, total)
 
 
 def get_signal_matches(limit: int = config.SIGNALS_QUERY_LIMIT,
                        block_window: int = config.SIGNAL_BLOCK_WINDOW,
-                       time_range: str = config.DEFAULT_TIME_RANGE):
-    """(summary_df, matches_df) — не-прогрессивный путь (стаб/тесты/совместимость).
-
-    Склеивает все батчи `iter_signal_matches` в один summary. `matches_df` на этом
-    пути не нужен (UI берёт только summary) — возвращаем пустой каркас по контракту.
-    """
+                       time_range: str = config.DEFAULT_TIME_RANGE) -> pd.DataFrame:
+    """Весь summary одним куском (стаб / тесты / не-прогрессивный путь)."""
     parts = [batch for batch, _, _ in
              iter_signal_matches(limit, block_window, time_range)]
-    summary = (pd.concat(parts, ignore_index=True) if parts
-               else pd.DataFrame(columns=matching._SUMMARY_COLS))
-    return summary, pd.DataFrame(columns=matching._MATCHES_COLS)
+    return (pd.concat(parts, ignore_index=True) if parts
+            else signals_queries.empty_summary())
 
 
 # --------------------------------------------------------------------------- #
-# Заглушка: связные сигналы + трейды (детерминированный seed).
+# Заглушка: детерминированный summary без обеих БД (USE_STUB=true).
 # --------------------------------------------------------------------------- #
-# Фиксированный «алфавит» адресов токенов (нижний регистр, как в БД после
-# lower). Каждый адрес — повторение одной hex-цифры, чтобы адреса были
-# различимы по любой подстроке (важно для фильтра «Токен» на странице).
-_STUB_TOKENS = ["0x" + f"{i:x}" * 40 for i in range(1, 9)]
+_STUB_PAIRS = [
+    ("ETH", "USD", "WETH/USDC Uv3 0.05% SELL | ETH/USDT Perp OKX BUY"),
+    ("BTC", "USD", "WBTC/USDT Uv3 0.3% SELL | BTC/USDT Perp Binance BUY"),
+    ("LINK", "ETH", "LINK/ETH Uv2 BUY | LINK/USDT Perp OKX SELL"),
+    ("XAU", "USD", "PAXG/USDC Uv3 0.3% SELL | XAU/USDT Perp OKX BUY"),
+]
 
 
-def _stub_hop(token_in: str, token_out: str) -> dict:
-    """Хоп маршрута в формате route из Postgres (см. self-test matching.py)."""
-    return {"fee_rate": 0.003, "protocol": {"id": 0, "version": 3},
-            "decimals_in": 18, "decimals_out": 18,
-            "token_in_address": token_in, "token_out_address": token_out}
+def _stub_summary(limit: int, block_window: int) -> pd.DataFrame:
+    """~80 сигналов за ~40 дней; часть покрыта атомарно, часть — по объёму.
 
-
-def _stub_trade(hop: dict, block: int, usd: float, ts, rng) -> dict:
-    """Трейд в формате get_trades (колонки контракта new_queries).
-
-    token_a=token_in, token_b=token_out + side='sell' → направление свопа
-    совпадает с хопом сигнала (in→out), поэтому ориентированный граф покрытия
-    видит цепочку в нужную сторону.
-    """
-    return dict(
-        block_number=block,
-        token_a=hop["token_in_address"],
-        token_b=hop["token_out_address"],
-        usd_amount=float(usd),
-        trader_address=f"0xshark{int(rng.integers(1, 6)):034x}",
-        bribe=str(int(rng.integers(10**15, 10**18))),
-        priority_fee=str(int(rng.integers(10**14, 10**16))),
-        side="sell",
-        swap_timestamp=ts,
-    )
-
-
-def _stub_signals_and_trades(limit: int):
-    """~80 сигналов за ~40 дней; ~60% получают покрывающие трейды.
-
-    Покрытие разнообразное: сплиты по 1-2 трейда на хоп со случайным
-    коэффициентом 0.5-1.2 от нужного объёма, поэтому есть и полностью, и
-    частично покрытые сигналы; плюс шумовые трейды в чужих блоках, которые
-    матчинг обязан отбросить.
+    Форма и типы совпадают с боевым `get_signal_summary`, поэтому страница,
+    фильтры и статистика проверяются end-to-end без ClickHouse и Postgres.
     """
     rng = np.random.default_rng(42)
-    n = min(limit, 80)
-    base_block = 24791000
-    t0 = pd.Timestamp("2026-05-18 12:00:00")
+    n = min(int(limit), 80)
+    base_block = 25_500_000
+    t0 = pd.Timestamp("2026-07-14 09:00:00")
 
-    signals, trades = [], []
+    rows = []
     for i in range(n):
-        block = base_block + int(rng.integers(0, 5000))
-        ia, ib, ic = rng.choice(len(_STUB_TOKENS), size=3, replace=False)
-        a, b, c = _STUB_TOKENS[ia], _STUB_TOKENS[ib], _STUB_TOKENS[ic]
-        route = [_stub_hop(a, b)]
-        if rng.integers(1, 3) == 2:                      # 1 или 2 хопа
-            route.append(_stub_hop(b, c))
+        base, quote, route = _STUB_PAIRS[int(rng.integers(0, len(_STUB_PAIRS)))]
+        n_hops = int(rng.integers(1, 6))
+        found_block = base_block - int(rng.integers(0, 5_000))
         amount = float(rng.uniform(1_000, 500_000))
-        ts = t0 - pd.Timedelta(minutes=int(rng.integers(0, 60 * 24 * 40)))
-        signals.append(dict(
-            request_id=i + 1, ts=ts,
-            base_token=route[-1]["token_out_address"], quote_token=a,
-            quote_amount=amount, bribe=float(rng.uniform(0, 2)),
-            found_block=block, route=route,
-            profit=float(rng.uniform(-500, 5_000)),
-        ))
-        if rng.random() < 0.6:                           # покрывающие трейды
-            for hop in route:
-                splits = int(rng.integers(1, 3))
-                for _ in range(splits):
-                    usd = amount / splits * float(rng.uniform(0.5, 1.2))
-                    trades.append(_stub_trade(hop, block, usd, ts, rng))
-        if rng.random() < 0.3:                           # шум: чужой блок
-            trades.append(_stub_trade(
-                route[0], block + 7, float(rng.uniform(1_000, 50_000)), ts, rng))
+        bribe = float(rng.uniform(1e-5, 5e-3))
 
-    signals_df = pd.DataFrame(signals)
-    trades_df = pd.DataFrame(trades, columns=[
-        "block_number", "token_a", "token_b", "usd_amount",
-        "trader_address", "bribe", "priority_fee", "side", "swap_timestamp"])
-    return signals_df, trades_df
+        # Атомарное покрытие возможно только при >=2 ногах — как в боевом запросе.
+        kind = ""
+        if rng.random() < 0.45:
+            kind = "atomic" if n_hops >= config.SIGNAL_MIN_ATOMIC_LEGS else "volume"
+        covered = kind != ""
+        covered_legs = (int(rng.integers(2, n_hops + 1)) if kind == "atomic"
+                        else 1 if kind == "volume" else 0)
+        comp_bribe = float(rng.uniform(1e-5, 5e-3)) if covered else np.nan
+        volume = amount * float(rng.uniform(0.5, 1.2)) if covered else 0.0
+        swap_block = found_block + int(rng.integers(-block_window, block_window + 1))
+
+        rows.append({
+            "request_id": f"stub-{i:04d}",
+            "signal_timestamp": t0 - pd.Timedelta(minutes=int(rng.integers(0, 60 * 24 * 40))),
+            "found_block": found_block,
+            "base_token": base, "quote_token": quote,
+            "token_a": base, "token_b": quote,
+            "signal_amount": amount,
+            "profit": float(rng.uniform(-500, 5_000)),
+            "route": route,
+            "signal_bribe": bribe,
+            "signal_fee": 0.003,
+            "n_hops": n_hops,
+            "covered": covered,
+            "coverage_kind": kind,
+            "covered_legs": covered_legs,
+            "coverage_ratio": covered_legs / n_hops,
+            "covering_volume": volume,
+            "n_trades": int(rng.integers(1, 5)) if covered else 0,
+            "swap_timestamp": (t0 - pd.Timedelta(minutes=int(rng.integers(0, 60 * 24 * 40)))
+                               if covered else pd.NaT),
+            "swap_block": swap_block if covered else pd.NA,
+            "swap_route_str": route.split(" | ")[0] if covered else "",
+            "swap_amount": volume if covered else np.nan,
+            "swap_user_id": f"0xshark{int(rng.integers(1, 6)):034x}" if covered else "",
+            "swap_bribe": comp_bribe,
+            "swap_fee": float(rng.uniform(1e-6, 1e-4)) if covered else np.nan,
+            "competitor_bribe": comp_bribe,
+            "bribe_edge": bribe - comp_bribe if covered else np.nan,
+        })
+
+    df = pd.DataFrame(rows, columns=SUMMARY_COLS)
+    df["swap_block"] = df["swap_block"].astype("Int64")
+    return df

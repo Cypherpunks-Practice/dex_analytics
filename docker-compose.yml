@@ -4,13 +4,15 @@ services:
     image: chainbi-dashboard
     container_name: chainbi
     restart: unless-stopped
-    env_file: .env                  # CH_* (ClickHouse) и PG_* (Postgres, страница «Сигналы») → в окружение контейнера
+    env_file: .env                  # CH_* (подключение к ClickHouse) и CH_PG_* (по ним в Postgres ходит сам ClickHouse)
     ports:
       - "${APP_PORT:-5000}:5000"    # порт публикации на хосте; внутри всегда 5000
     volumes:
       - ./logins.db:/app/logins.db  # bind-mount: рантайм-изменения юзеров живут на хосте
     extra_hosts:
-      # Чтобы CH_HOST/PG_HOST=host.docker.internal достучались до БД на хост-машине и на Linux
-      # (на Docker Desktop работает и без этого). Для удалённых серверов БД не мешает.
-      # Обе БД внешние: ClickHouse (аналитика) и Postgres (сигналы) в compose не входят.
+      # Чтобы CH_HOST=host.docker.internal достучался до ClickHouse на хост-машине и на Linux
+      # (на Docker Desktop работает и без этого). Для удалённого сервера БД не мешает.
+      # ClickHouse в compose не входит; Postgres дашборд не открывает вовсе — сигналы
+      # он получает из ClickHouse, который сам ходит в torch по CH_PG_* (адрес — с точки
+      # зрения КОНТЕЙНЕРА CLICKHOUSE, не этого контейнера).
       - "host.docker.internal:host-gateway"
