@@ -59,7 +59,12 @@ desktop.ini
 *.zip
 ch_data/
 ch_user_files/
+<<<<<<< HEAD
 
 *.pdf
 *.tex
 
+=======
+*.pdf
+*.tex
+>>>>>>> main
