@@ -97,6 +97,30 @@ def get_signal_matches(limit: int = config.SIGNALS_QUERY_LIMIT,
             else signals_queries.empty_summary())
 
 
+# --- Поблочное сравнение брайбов с заданным конкурентом ----------------------
+BRIBE_CMP_COLS = signals_queries.BRIBE_CMP_COLS
+
+
+def empty_bribe_comparison() -> pd.DataFrame:
+    """Пустой каркас сравнения брайбов (стартовое значение состояния таблицы)."""
+    return signals_queries.empty_bribe_comparison()
+
+
+def get_bribe_comparison(competitor: str,
+                         time_range: str = config.DEFAULT_TIME_RANGE) -> pd.DataFrame:
+    """Наш суммарный брайб vs брайб конкурента по блокам; окно — выбранная «Дата».
+
+    Пустой адрес → пустой каркас. STUB отдаёт детерминированную выборку без БД.
+    """
+    competitor = str(competitor or "").strip().lower()
+    if not competitor:
+        return empty_bribe_comparison()
+    if clickhouse.USE_STUB:
+        return _stub_bribe_comparison(competitor)
+    min_ts = _query_min_timestamp(time_range)
+    return signals_queries.get_bribe_comparison(competitor, min_ts=min_ts)
+
+
 # --------------------------------------------------------------------------- #
 # Заглушка: детерминированный summary без обеих БД (USE_STUB=true).
 # --------------------------------------------------------------------------- #
@@ -170,4 +194,33 @@ def _stub_summary(limit: int, block_window: int) -> pd.DataFrame:
 
     df = pd.DataFrame(rows, columns=SUMMARY_COLS)
     df["swap_block"] = df["swap_block"].astype("Int64")
+    return df
+
+
+def _stub_bribe_comparison(competitor: str) -> pd.DataFrame:
+    """~30 блоков сравнения брайбов; детерминированно по адресу конкурента.
+
+    Форма и типы совпадают с боевым get_bribe_comparison, поэтому секция и её
+    таблица проверяются end-to-end без ClickHouse.
+    """
+    seed = sum(competitor.encode()) or 1        # стабильно, без PYTHONHASHSEED
+    rng = np.random.default_rng(seed)
+    base_block = 25_500_000
+
+    rows = []
+    for i in range(30):
+        our = float(rng.uniform(0, 5e-3))
+        comp = float(rng.uniform(0, 5e-3))
+        rows.append({
+            "block": base_block - i,
+            "n_signals": int(rng.integers(0, 5)),
+            "our_bribe": our,
+            "n_tx": int(rng.integers(0, 3)),
+            "competitor_bribe": comp,
+            "bribe_edge": our - comp,
+        })
+
+    df = pd.DataFrame(rows, columns=BRIBE_CMP_COLS)
+    for col in ("block", "n_signals", "n_tx"):
+        df[col] = df[col].astype("int64")
     return df

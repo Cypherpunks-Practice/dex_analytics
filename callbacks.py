@@ -674,6 +674,24 @@ def apply_signals_time_range(state, var_name=None, value=None):
     лимитом; теперь объём выборки определяет сама дата, поэтому дёргаем
     `refresh_signals` (читает `state.filter_time_range`), а не клиентский фильтр."""
     refresh_signals(state)
+    # Сравнение брайбов считается за то же окно «Дата» — держим его в синхроне.
+    apply_bribe_comparison(state)
+
+
+def apply_bribe_comparison(state, var_name=None, value=None):
+    """Пересчитать поблочное сравнение брайбов для вбитого адреса конкурента.
+
+    Отдельный от покрытия срез: наш суммарный планируемый брайб в блоке против
+    фактического брайба конкурента. Окно берётся из того же фильтра «Дата». Пустой
+    адрес → пустая таблица. Ошибку БД глотаем, чтобы не ронять страницу."""
+    competitor = str(state.bribe_cmp_competitor or "").strip()
+    key = _TIME_KEY.get(state.filter_time_range, config.DEFAULT_TIME_RANGE)
+    try:
+        state.bribe_cmp_data = signals_service.get_bribe_comparison(
+            competitor, time_range=key)
+    except Exception as exc:                       # noqa: BLE001 — страница должна жить
+        print(f"[bribe_comparison] ошибка запроса: {exc}")
+        state.bribe_cmp_data = signals_service.empty_bribe_comparison()
 
 
 def reset_signals_filters(state):

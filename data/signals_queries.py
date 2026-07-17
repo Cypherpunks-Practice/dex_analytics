@@ -349,6 +349,100 @@ def get_signal_summary(offset: int, size: int, block_window: int,
     return df[SUMMARY_COLS]
 
 
+# --- Поблочное сравнение брайбов: наш суммарный vs заданный конкурент ---------
+# Отдельная от покрытия задача: не «перехватил ли кто-то сигнал», а экономический
+# срез аукциона брайбов. На вход — адрес одного конкурента; на выход — по строке на
+# БЛОК: сумма наших планируемых брайбов по всем сигналам этого блока против
+# фактического брайба конкурента (bribe + priority_fee) в том же блоке.
+#
+# Гранулярность — блок, а не сигнал: в одном блоке много наших сигналов сворачиваются
+# в одно число. FULL OUTER JOIN оставляет и блоки, где были только наши сигналы, и
+# блоки, где активен был только конкурент. Всё в ETH (в БД — wei).
+BRIBE_CMP_COLS = [
+    "block", "n_signals", "our_bribe", "n_tx", "competitor_bribe", "bribe_edge",
+]
+
+
+def empty_bribe_comparison() -> pd.DataFrame:
+    """Пустой каркас сравнения брайбов по контракту BRIBE_CMP_COLS."""
+    return pd.DataFrame(columns=BRIBE_CMP_COLS)
+
+
+_BRIBE_CMP_SQL = """
+WITH
+-- Один брайб на сигнал (в signals_legs он продублирован на каждую ногу).
+per_signal AS (
+    SELECT request_id,
+           any(found_block) AS block,
+           any(bribe)       AS bribe
+    FROM signals_legs
+    WHERE ts >= {min_ts:DateTime64(3)}
+    GROUP BY request_id
+),
+-- Наша сторона: сумма планируемых брайбов по всем сигналам блока.
+our AS (
+    SELECT block,
+           count()               AS n_signals,
+           sum(toFloat64(bribe)) AS our_wei
+    FROM per_signal
+    GROUP BY block
+),
+-- Диапазон блоков окна — им прунится скан transactions по конкуренту.
+bounds AS (
+    SELECT min(block) AS lo, max(block) AS hi FROM our
+),
+-- Конкурент: суммарно уплаченное (bribe + priority_fee) по его транзакциям в блоке.
+comp AS (
+    SELECT t.block_number AS block,
+           count()        AS n_tx,
+           sum(toFloat64(ifNull(t.bribe, 0)) + toFloat64(ifNull(t.priority_fee, 0))) AS comp_wei
+    FROM transactions AS t
+    WHERE lower(t.trader_address) = {competitor:String}
+      AND t.block_number >= (SELECT lo FROM bounds)
+      AND t.block_number <= (SELECT hi FROM bounds)
+    GROUP BY t.block_number
+)
+SELECT
+    block                       AS block,
+    n_signals                   AS n_signals,
+    our_wei / 1e18              AS our_bribe,
+    n_tx                        AS n_tx,
+    comp_wei / 1e18            AS competitor_bribe,
+    (our_wei - comp_wei) / 1e18 AS bribe_edge
+FROM our
+FULL OUTER JOIN comp USING (block)
+ORDER BY block DESC
+LIMIT {limit:UInt64}
+"""
+
+
+def get_bribe_comparison(competitor: str, min_ts: datetime | None = None,
+                         limit: int = config.SIGNALS_QUERY_LIMIT) -> pd.DataFrame:
+    """Поблочное сравнение нашего суммарного брайба с брайбом конкурента (ETH).
+
+    `competitor` — адрес одного конкурента (сравниваем именно с ним). Пустой адрес
+    или отсутствие материализации сигналов → пустой каркас.
+    """
+    if not _signals_ready():
+        return empty_bribe_comparison()
+    competitor = str(competitor or "").strip().lower()
+    if not competitor:
+        return empty_bribe_comparison()
+
+    df = clickhouse.execute(_BRIBE_CMP_SQL, {
+        "min_ts": min_ts or _EPOCH,
+        "competitor": competitor,
+        "limit": int(limit),
+    })
+    if df.empty:
+        return empty_bribe_comparison()
+
+    # block/n_* приезжают целочисленными типами CH — приводим к аккуратному int.
+    for col in ("block", "n_signals", "n_tx"):
+        df[col] = df[col].astype("int64")
+    return df[BRIBE_CMP_COLS]
+
+
 # --------------------------------------------------------------------------- #
 # Self-test инвариантов покрытия (python -m data.signals_queries).
 #

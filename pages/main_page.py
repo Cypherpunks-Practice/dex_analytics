@@ -25,6 +25,7 @@ from callbacks import (
     admin_delete,
     admin_demote,
     admin_promote,
+    apply_bribe_comparison,
     apply_signals_filters,
     apply_signals_time_range,
     apply_signals_window,
@@ -225,6 +226,20 @@ signals_columns = {
     "competitor_bribe": {"index": 17, "title": "Bribe конкурента (ETH)", "format": "%.6f"},
     "bribe_edge": {"index": 18, "title": "Перевес (ETH)", "format": "%.6f"},
     "swap_fee": {"index": 19, "title": "Fee сделки (ETH)", "format": "%.6f"},
+}
+
+# ---- Сравнение брайбов по блокам (наш суммарный vs заданный конкурент) ----
+# Отдельный от покрытия срез: ключ строки — БЛОК. Вбиваем адрес конкурента,
+# получаем поблочно наш суммарный планируемый брайб против его фактического.
+bribe_cmp_competitor = ""            # адрес конкурента из поля ввода
+bribe_cmp_data = _empty_df
+bribe_cmp_columns = {
+    "block": {"index": 0, "title": "Блок"},
+    "n_signals": {"index": 1, "title": "Наших сигналов"},
+    "our_bribe": {"index": 2, "title": "Наш суммарный bribe (ETH)", "format": "%.6f"},
+    "n_tx": {"index": 3, "title": "Транзакций конкурента"},
+    "competitor_bribe": {"index": 4, "title": "Bribe конкурента (ETH)", "format": "%.6f"},
+    "bribe_edge": {"index": 5, "title": "Перевес (ETH)", "format": "%.6f"},
 }
 # ---------------------------------------------------------------------------
 # Хелперы для выражений шаблона
@@ -637,6 +652,30 @@ with tgb.Page() as page:
                     page_size=50,
                     page_size_options=[10, 50, 100, 500],
                     on_action=on_signal_row_click
+                )
+
+            # ---- Сравнение брайбов по блокам с заданным конкурентом ----
+            with tgb.part(class_name="signals-table-section"):
+                tgb.text("## Сравнение брайбов по блокам", mode="md")
+                tgb.text(
+                    "Наш суммарный планируемый bribe в блоке против фактического bribe "
+                    "(bribe + priority_fee) заданного конкурента. Окно — по фильтру «Дата» выше.",
+                    mode="md", class_name="filter-label")
+                with tgb.part():
+                    tgb.text("Адрес конкурента", mode="md", class_name="filter-label")
+                    tgb.input(
+                        value="{bribe_cmp_competitor}",
+                        label="0x…",
+                        on_change=apply_bribe_comparison,
+                        change_delay=500,
+                        class_name="filter-input",
+                    )
+                tgb.table(
+                    data="{bribe_cmp_data}",
+                    columns="{bribe_cmp_columns}",
+                    rebuild=True,
+                    page_size=50,
+                    page_size_options=[10, 50, 100, 500],
                 )
                 
                 
