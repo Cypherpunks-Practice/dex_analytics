@@ -213,7 +213,7 @@ def _stub_bribe_comparison(competitor: str) -> pd.DataFrame:
         comp = float(rng.uniform(0, 5e-3))
         rows.append({
             "block": base_block - i,
-            "n_signals": int(rng.integers(0, 5)),
+            "n_signals": int(rng.integers(1, 5)),
             "our_bribe": our,
             "n_tx": int(rng.integers(0, 3)),
             "competitor_bribe": comp,

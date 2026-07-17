@@ -356,8 +356,9 @@ def get_signal_summary(offset: int, size: int, block_window: int,
 # фактического брайба конкурента (bribe + priority_fee) в том же блоке.
 #
 # Гранулярность — блок, а не сигнал: в одном блоке много наших сигналов сворачиваются
-# в одно число. FULL OUTER JOIN оставляет и блоки, где были только наши сигналы, и
-# блоки, где активен был только конкурент. Всё в ETH (в БД — wei).
+# в одно число. Ведущая сторона — наша (LEFT JOIN): в таблице только блоки, где БЫЛИ
+# наши сигналы; блок, в котором конкурент не был активен, показывается его нулём.
+# Блоки «только конкурент, без наших сигналов» не выводятся. Всё в ETH (в БД — wei).
 BRIBE_CMP_COLS = [
     "block", "n_signals", "our_bribe", "n_tx", "competitor_bribe", "bribe_edge",
 ]
@@ -410,7 +411,7 @@ SELECT
     comp_wei / 1e18            AS competitor_bribe,
     (our_wei - comp_wei) / 1e18 AS bribe_edge
 FROM our
-FULL OUTER JOIN comp USING (block)
+LEFT JOIN comp USING (block)
 ORDER BY block DESC
 LIMIT {limit:UInt64}
 """
